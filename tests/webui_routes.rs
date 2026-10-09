@@ -143,6 +143,24 @@ async fn get_diagnostics_returns_ok() {
 }
 
 #[tokio::test]
+async fn get_acl_groups_returns_ok() {
+    let state = make_state();
+    let app = build_router(state);
+
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/acl/groups")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
 async fn unknown_route_returns_404() {
     let state = make_state();
     let app = build_router(state);

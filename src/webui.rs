@@ -50,6 +50,8 @@ pub fn build_router(state: WebState) -> Router {
         .route("/api/room", get(get_room))
         .route("/api/acl/rules", get(get_acl_rules))
         .route("/api/acl/groups", get(get_acl_groups))
+        .route("/api/acl/groups", post(create_acl_group))
+        .route("/api/acl/groups/{group_id}", post(update_acl_group).delete(delete_acl_group))
         .route("/api/auth/pending", get(get_pending_auth))
         .route("/api/connection", get(get_connection_status))
         .route("/api/diagnostics", get(get_connection_diagnostics))
@@ -126,13 +128,6 @@ async fn get_acl_rules(
 ) -> Json<serde_json::Value> {
     let snap = st.state_store.snapshot().await;
     Json(serde_json::json!({ "rules": snap.acl_rules }))
-}
-
-async fn get_acl_groups(
-    AxumState(st): AxumState<WebState>,
-) -> Json<serde_json::Value> {
-    let snap = st.state_store.snapshot().await;
-    Json(serde_json::json!({ "groups": snap.acl_groups }))
 }
 
 async fn get_pending_auth(
@@ -253,6 +248,35 @@ async fn delete_acl_rule(
     axum::extract::Path(rule_id): axum::extract::Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     proxy_query(&st.ipc_client, IpcRequest::DeleteAclRule { rule_id }).await
+}
+
+async fn get_acl_groups(
+    AxumState(st): AxumState<WebState>,
+) -> Json<serde_json::Value> {
+    let snap = st.state_store.snapshot().await;
+    Json(serde_json::json!({ "groups": snap.acl_groups }))
+}
+
+async fn create_acl_group(
+    AxumState(st): AxumState<WebState>,
+    Json(group): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    proxy_query(&st.ipc_client, IpcRequest::CreateAclGroup { group }).await
+}
+
+async fn update_acl_group(
+    AxumState(st): AxumState<WebState>,
+    axum::extract::Path(group_id): axum::extract::Path<String>,
+    Json(patch): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    proxy_query(&st.ipc_client, IpcRequest::UpdateAclGroup { group_id, patch }).await
+}
+
+async fn delete_acl_group(
+    AxumState(st): AxumState<WebState>,
+    axum::extract::Path(group_id): axum::extract::Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    proxy_query(&st.ipc_client, IpcRequest::DeleteAclGroup { group_id }).await
 }
 
 #[derive(Deserialize)]

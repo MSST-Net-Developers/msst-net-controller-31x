@@ -114,6 +114,46 @@ pub async fn get_acl_groups(
     Ok(snap.acl_groups)
 }
 
+/// Create a permission group.
+#[tauri::command]
+pub async fn create_acl_group(
+    state: tauri::State<'_, Arc<RwLock<ControllerState>>>,
+    group: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let st = state.read().await;
+    st.ipc_client
+        .query(IpcRequest::CreateAclGroup { group })
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Update a permission group.
+#[tauri::command]
+pub async fn update_acl_group(
+    state: tauri::State<'_, Arc<RwLock<ControllerState>>>,
+    group_id: String,
+    patch: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let st = state.read().await;
+    st.ipc_client
+        .query(IpcRequest::UpdateAclGroup { group_id, patch })
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Delete a permission group.
+#[tauri::command]
+pub async fn delete_acl_group(
+    state: tauri::State<'_, Arc<RwLock<ControllerState>>>,
+    group_id: String,
+) -> Result<serde_json::Value, String> {
+    let st = state.read().await;
+    st.ipc_client
+        .query(IpcRequest::DeleteAclGroup { group_id })
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Get pending auth requests.
 #[tauri::command]
 pub async fn get_pending_auth(

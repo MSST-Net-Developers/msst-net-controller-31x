@@ -8,6 +8,7 @@
   } from "$lib/stores";
   import StatusIndicator from "$lib/components/StatusIndicator.svelte";
   import AuthDialog from "$lib/components/AuthDialog.svelte";
+  import GroupManager from "$lib/components/GroupManager.svelte";
   import { onMount } from "svelte";
 
   let { children } = $props();
@@ -174,8 +175,16 @@
       {/if}
 
     {:else if activeTab === "acl"}
-      <h2>防火墙规则</h2>
+      <h2>防御</h2>
       {#if state.state}
+        <!-- Permission groups -->
+        <GroupManager
+          groups={state.state.acl_groups}
+          onrefresh={() => state.refresh()}
+        />
+
+        <!-- Firewall rules -->
+        <h2 style="margin-top:24px">防火墙规则</h2>
         {@const rules = state.state.acl_rules}
         {#if rules.length === 0}
           <p class="empty">暂无规则</p>

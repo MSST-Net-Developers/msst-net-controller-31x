@@ -145,6 +145,18 @@ export const api = {
     return apiDelete(`/api/acl/rules/${rule_id}`);
   },
 
+  async createAclGroup(group: unknown): Promise<unknown> {
+    return apiPost("/api/acl/groups", group);
+  },
+
+  async updateAclGroup(group_id: string, patch: unknown): Promise<unknown> {
+    return apiPost(`/api/acl/groups/${group_id}`, patch);
+  },
+
+  async deleteAclGroup(group_id: string): Promise<void> {
+    return apiDelete(`/api/acl/groups/${group_id}`);
+  },
+
   async submitAuthDecision(request_id: string, decision: string): Promise<unknown> {
     return apiPost("/api/auth/decision", { request_id, decision });
   },
