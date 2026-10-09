@@ -164,6 +164,18 @@ pub async fn get_pending_auth(
     Ok(snap.pending_auth)
 }
 
+/// Get access log entries.
+#[tauri::command]
+pub async fn list_access_log(
+    state: tauri::State<'_, Arc<RwLock<ControllerState>>>,
+) -> Result<serde_json::Value, String> {
+    let st = state.read().await;
+    st.ipc_client
+        .query(IpcRequest::GetAccessLog { limit: None })
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // ── Room commands ────────────────────────────────────────────────────────────
 
 /// Create a room. Returns the room info if accepted by Core.
@@ -247,6 +259,27 @@ pub async fn delete_acl_rule(
         .query(IpcRequest::DeleteAclRule { rule_id })
         .await
         .map_err(|e| e.to_string())
+}
+
+/// Clear all firewall rules.
+///
+/// Iterates through all rules and deletes each one, since the IPC protocol
+/// does not have a batch-clear request.
+#[tauri::command]
+pub async fn clear_acl_rules(
+    state: tauri::State<'_, Arc<RwLock<ControllerState>>>,
+) -> Result<(), String> {
+    let st = state.read().await;
+    let snap = st.state_store.snapshot().await;
+    for rule in &snap.acl_rules {
+        let _ = st
+            .ipc_client
+            .query(IpcRequest::DeleteAclRule {
+                rule_id: rule.id.clone(),
+            })
+            .await;
+    }
+    Ok(())
 }
 
 // ── Auth commands ────────────────────────────────────────────────────────────

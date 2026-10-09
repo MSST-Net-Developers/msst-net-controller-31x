@@ -48,10 +48,10 @@ pub fn build_router(state: WebState) -> Router {
         .route("/api/health", get(get_health))
         .route("/api/nodes", get(get_nodes))
         .route("/api/room", get(get_room))
-        .route("/api/acl/rules", get(get_acl_rules))
-        .route("/api/acl/groups", get(get_acl_groups))
-        .route("/api/acl/groups", post(create_acl_group))
+        .route("/api/acl/rules", get(get_acl_rules).post(create_acl_rule).delete(clear_acl_rules))
+        .route("/api/acl/groups", get(get_acl_groups).post(create_acl_group))
         .route("/api/acl/groups/{group_id}", post(update_acl_group).delete(delete_acl_group))
+        .route("/api/acl/access-log", get(get_access_log))
         .route("/api/auth/pending", get(get_pending_auth))
         .route("/api/connection", get(get_connection_status))
         .route("/api/diagnostics", get(get_connection_diagnostics))
@@ -59,7 +59,6 @@ pub fn build_router(state: WebState) -> Router {
         .route("/api/room/create", post(create_room))
         .route("/api/room/join", post(join_room))
         .route("/api/room/leave", post(leave_room))
-        .route("/api/acl/rules", post(create_acl_rule))
         .route("/api/acl/rules/{rule_id}", post(update_acl_rule).delete(delete_acl_rule))
         .route("/api/auth/decision", post(submit_auth_decision))
         .route("/api/net/settings", get(get_net_settings).put(set_net_settings))
@@ -68,7 +67,9 @@ pub fn build_router(state: WebState) -> Router {
         .route("/api/net/endpoints", get(get_endpoints))
         .route("/api/net/refresh-endpoint", post(refresh_endpoint))
         .route("/api/relays", get(get_relays))
-        .route("/api/ping", post(set_ping_enabled))
+        .route("/api/ping", get(get_ping).post(set_ping_enabled))
+        .route("/api/net/ping-peer", post(start_diag_ping))
+        .route("/api/net/ping-peer/{job_id}", get(get_diag_ping_result))
         .route("/api/identity/display-name", post(update_display_name))
         .route("/api/identity/handle", post(update_handle))
         .route("/api/re-register", post(re_register))
@@ -250,6 +251,22 @@ async fn delete_acl_rule(
     proxy_query(&st.ipc_client, IpcRequest::DeleteAclRule { rule_id }).await
 }
 
+async fn clear_acl_rules(
+    AxumState(st): AxumState<WebState>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let snap = st.state_store.snapshot().await;
+    for rule in &snap.acl_rules {
+        let _ = st.ipc_client.query(IpcRequest::DeleteAclRule { rule_id: rule.id.clone() }).await;
+    }
+    Ok(Json(serde_json::json!({ "ok": true })))
+}
+
+async fn get_access_log(
+    AxumState(st): AxumState<WebState>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    proxy_query(&st.ipc_client, IpcRequest::GetAccessLog { limit: None }).await
+}
+
 async fn get_acl_groups(
     AxumState(st): AxumState<WebState>,
 ) -> Json<serde_json::Value> {
@@ -355,6 +372,31 @@ async fn set_ping_enabled(
     Json(body): Json<PingBody>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     proxy_query(&st.ipc_client, IpcRequest::SetPingEnabled { enabled: body.enabled }).await
+}
+
+async fn get_ping(
+    AxumState(st): AxumState<WebState>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    proxy_query(&st.ipc_client, IpcRequest::GetNetSettings).await
+}
+
+#[derive(Deserialize)]
+struct DiagPingBody {
+    device_id: String,
+}
+
+async fn start_diag_ping(
+    AxumState(st): AxumState<WebState>,
+    Json(body): Json<DiagPingBody>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    proxy_query(&st.ipc_client, IpcRequest::StartDiagPing { device_id: body.device_id }).await
+}
+
+async fn get_diag_ping_result(
+    AxumState(st): AxumState<WebState>,
+    axum::extract::Path(job_id): axum::extract::Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    proxy_query(&st.ipc_client, IpcRequest::GetDiagPingResult { job_id }).await
 }
 
 #[derive(Deserialize)]

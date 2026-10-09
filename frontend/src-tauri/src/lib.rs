@@ -45,6 +45,8 @@ pub fn run() {
             msst_net_controller::tauri_commands::create_acl_rule,
             msst_net_controller::tauri_commands::update_acl_rule,
             msst_net_controller::tauri_commands::delete_acl_rule,
+            msst_net_controller::tauri_commands::clear_acl_rules,
+            msst_net_controller::tauri_commands::list_access_log,
             msst_net_controller::tauri_commands::submit_auth_decision,
             msst_net_controller::tauri_commands::get_net_settings,
             msst_net_controller::tauri_commands::set_net_settings,

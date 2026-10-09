@@ -145,6 +145,14 @@ export const api = {
     return apiDelete(`/api/acl/rules/${rule_id}`);
   },
 
+  async clearAclRules(): Promise<void> {
+    return apiDelete("/api/acl/rules");
+  },
+
+  async getAccessLog(): Promise<unknown> {
+    return apiGet("/api/acl/access-log");
+  },
+
   async createAclGroup(group: unknown): Promise<unknown> {
     return apiPost("/api/acl/groups", group);
   },
@@ -183,6 +191,22 @@ export const api = {
 
   async getRelays(): Promise<unknown> {
     return apiGet("/api/relays");
+  },
+
+  async getPing(): Promise<unknown> {
+    return apiGet("/api/ping");
+  },
+
+  async setPingEnabled(enabled: boolean): Promise<unknown> {
+    return apiPost("/api/ping", { enabled });
+  },
+
+  async startDiagPing(device_id: string): Promise<unknown> {
+    return apiPost("/api/net/ping-peer", { device_id });
+  },
+
+  async getDiagPingResult(job_id: string): Promise<unknown> {
+    return apiGet(`/api/net/ping-peer/${job_id}`);
   },
 
   async updateDisplayName(user: string, device: string): Promise<unknown> {
