@@ -5,7 +5,9 @@
 //! - **Core lifecycle** (called by `MsstVpnService`): start/stop the
 //!   embedded Core (`msst_net_core::embedded::EmbeddedCore`), hand it the
 //!   VpnService TUN fd, report network changes.  Core serves IPC on a Unix
-//!   socket in the app's private directory.
+//!   socket in the app's private directory and protects every socket it
+//!   opens with `VpnService.protect` (works under "block connections
+//!   without VPN").
 //! - **Controller** (called by the UI): the same `IpcClient` as the desktop
 //!   Controller, connected to that socket.  The UI reads the view and sends
 //!   `IpcRequest`s; it never talks to Core internals directly.
@@ -122,6 +124,10 @@ static CORE: Mutex<Option<EmbeddedCore>> = Mutex::new(None);
 static CONTROLLER: OnceLock<Controller> = OnceLock::new();
 static JVM: OnceLock<JavaVM> = OnceLock::new();
 static LISTENER: Mutex<Option<GlobalRef>> = Mutex::new(None);
+/// The running `VpnService`, for Core's socket protection.  Core installs its
+/// protector once per process; the service instance can change, so the
+/// protector reads this slot on every call.
+static VPN_SERVICE: Mutex<Option<GlobalRef>> = Mutex::new(None);
 
 fn string_arg(env: &mut JNIEnv, s: &JString) -> Result<String, String> {
     env.get_string(s).map(Into::into).map_err(|e| format!("invalid string argument: {e}"))
@@ -153,6 +159,25 @@ fn controller() -> Result<&'static Controller, String> {
 
 // ── Core lifecycle (VpnService) ──────────────────────────────────────────────
 
+/// `VpnService.protect(fd)` on the current service (Core's `netsock`
+/// protector).  Without a service the socket is refused, so Core's traffic
+/// never silently enters the VPN.  Runs on Core threads; must not call into
+/// Core.
+fn protect_fd(fd: i32) -> bool {
+    let Some(service) = VPN_SERVICE.lock().unwrap().clone() else { return false };
+    let Some(vm) = JVM.get() else { return false };
+    let Ok(mut env) = vm.attach_current_thread_as_daemon() else { return false };
+    let protected = env.call_method(service.as_obj(), "protect", "(I)Z", &[JValue::Int(fd)]).and_then(|v| v.z());
+    if env.exception_check().unwrap_or(false) {
+        let _ = env.exception_clear();
+    }
+    let protected = protected.unwrap_or(false);
+    if !protected {
+        tracing::warn!(fd, "VpnService.protect failed");
+    }
+    protected
+}
+
 /// Start Core (no-op if already running).  `{"ok":true,"ipv4","ipv6"}`
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_com_msst_net_jni_MsstNative_nativeStartCore(
@@ -160,15 +185,24 @@ pub extern "system" fn Java_com_msst_net_jni_MsstNative_nativeStartCore(
     _class: JClass,
     data_dir: JString,
     socket_path: JString,
+    service: JObject,
 ) -> jstring {
+    if let Ok(vm) = env.get_java_vm() {
+        let _ = JVM.set(vm);
+    }
     guarded(&mut env, |env| {
         let (data_dir, socket) = match (string_arg(env, &data_dir), string_arg(env, &socket_path)) {
             (Ok(d), Ok(s)) => (d, s),
             (Err(e), _) | (_, Err(e)) => return err_msg("request", "invalid_request", e),
         };
+        match env.new_global_ref(service) {
+            Ok(g) => *VPN_SERVICE.lock().unwrap() = Some(g),
+            Err(e) => return err_msg("internal", "jni", e.to_string()),
+        }
         let mut slot = CORE.lock().unwrap();
         if slot.is_none() {
-            match EmbeddedCore::start(std::path::Path::new(&data_dir), std::path::Path::new(&socket), None) {
+            let protect: msst_net_core::netsock::Protector = Arc::new(protect_fd);
+            match EmbeddedCore::start(std::path::Path::new(&data_dir), std::path::Path::new(&socket), None, Some(protect)) {
                 Ok(core) => *slot = Some(core),
                 Err(e) => return err_msg("core", "core_start_failed", format!("客户端核心启动失败: {e:#}")),
             }
@@ -219,6 +253,7 @@ pub extern "system" fn Java_com_msst_net_jni_MsstNative_nativeStopCore(mut env: 
         if let Some(core) = CORE.lock().unwrap().take() {
             core.stop();
         }
+        VPN_SERVICE.lock().unwrap().take();
         ok(json!({}))
     })
 }
@@ -352,6 +387,12 @@ mod tests {
 
         let v: Value = serde_json::from_str(&c.request_json("not json")).unwrap();
         assert_eq!(v["error"]["code"], "invalid_request");
+    }
+
+    #[test]
+    fn protect_without_service_refuses_the_socket() {
+        assert!(VPN_SERVICE.lock().unwrap().is_none());
+        assert!(!protect_fd(3));
     }
 
     #[test]

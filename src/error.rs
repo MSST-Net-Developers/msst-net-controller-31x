@@ -166,28 +166,34 @@ impl From<ControllerError> for UiError {
     }
 }
 
-/// User-facing text for a Core error code.  Infrastructure failures get a
-/// plain explanation (their raw text is transport detail); validation
-/// failures keep Core's specific reason.
+/// User-facing text for a Core error code (`msst_ipc_protocol::errors`).
+///
+/// Core's `message` is diagnostic text; it is only appended for validation
+/// codes, where it names the offending input.  Unknown codes (newer Cores)
+/// get a generic message; the raw text stays available as `detail`.
 fn core_error_message(code: &str, raw: &str) -> String {
-    let summary = match code {
-        "coordinator_unavailable" => return "无法连接协调服务器，请检查网络连接后重试。".into(),
-        "coordinator_error" => return "协调服务器返回了错误，请稍后重试。".into(),
-        "relay_unavailable" => return "无法获取可用的中转服务器，请检查网络连接后重试。".into(),
-        "persist_failed" => return "客户端核心无法保存配置（磁盘写入失败），更改未生效。".into(),
-        "not_initialized" => return "客户端核心尚未完成初始化，请稍后重试。".into(),
-        "register_failed" => return "向协调服务器注册设备失败，请稍后重试。".into(),
-        "room_create_failed" => return "创建房间失败，请稍后重试。".into(),
-        "auth_failed" => "认证失败",
-        "invalid_rule" => "规则无效",
-        "invalid_group" | "invalid_patch" => "内容无效",
-        "invalid_handle" => "助记符无效",
-        "invalid_settings" => "设置无效",
-        "mnemonic_not_found" => "找不到该助记符",
-        "room_rejected" => "无法加入房间",
-        _ => return raw.to_string(),
-    };
-    format!("{summary}：{raw}")
+    use msst_ipc_protocol::errors::*;
+    let with_reason = |summary: &str| format!("{summary}：{raw}");
+    match code {
+        INVALID_REQUEST => "客户端核心无法识别此请求，控制器与核心版本可能不匹配。".into(),
+        INVALID_RULE => with_reason("规则无效"),
+        INVALID_PATCH | INVALID_GROUP => with_reason("内容无效"),
+        INVALID_SETTINGS => with_reason("设置无效"),
+        INVALID_HANDLE => "助记符只能包含小写字母、数字和横杠。".into(),
+        NOT_FOUND => "找不到对应的对象，它可能已被删除或已处理。".into(),
+        MNEMONIC_NOT_FOUND => with_reason("找不到该助记符对应的设备或用户"),
+        NOT_INITIALIZED => "客户端核心尚未完成初始化，请稍后重试。".into(),
+        NOT_AUTHENTICATED => "请先完成 MSST 接入认证。".into(),
+        AUTH_FAILED => "认证失败，请重试。".into(),
+        COORDINATOR_UNAVAILABLE => "无法连接协调服务器，请检查网络连接后重试。".into(),
+        COORDINATOR_ERROR => "协调服务器返回了错误，请稍后重试。".into(),
+        REGISTER_FAILED => "向协调服务器注册设备失败，请稍后重试。".into(),
+        RELAY_UNAVAILABLE => "无法获取可用的中转服务器，请检查网络连接后重试。".into(),
+        ROOM_CREATE_FAILED => "创建房间失败，请稍后重试。".into(),
+        ROOM_REJECTED => "无法加入房间，请检查房间号和密码。".into(),
+        PERSIST_FAILED => "客户端核心无法保存配置（磁盘写入失败），更改未生效。".into(),
+        _ => format!("客户端核心返回错误（{code}）。"),
+    }
 }
 
 impl ControllerError {
@@ -305,9 +311,17 @@ mod tests {
         let ui = UiError::from(ControllerError::CoreError { code: "invalid_rule".into(), message: "Invalid port '99999'".into() });
         assert_eq!(ui.message, "规则无效：Invalid port '99999'");
 
-        let ui = UiError::from(ControllerError::CoreError { code: "not_authenticated".into(), message: "请先完成 OIDC 认证".into() });
-        assert_eq!(ui.message, "请先完成 OIDC 认证");
-        assert!(ui.detail.is_none());
+        let ui = UiError::from(ControllerError::CoreError { code: "something_new".into(), message: "raw".into() });
+        assert!(ui.message.contains("something_new"));
+        assert_eq!(ui.detail.as_deref(), Some("raw"));
+    }
+
+    #[test]
+    fn every_documented_core_code_is_mapped() {
+        for code in msst_ipc_protocol::errors::ALL {
+            let msg = core_error_message(code, "RAW");
+            assert!(!msg.contains(&format!("（{code}）")), "no user message for Core error code `{code}`");
+        }
     }
 
     #[test]

@@ -307,6 +307,7 @@ impl IpcClient {
                     }
                     Ok(hs) => {
                         tracing::info!(remote = ?hs.remote_decoded, degraded = hs.degraded, "Connected to Core");
+                        self.inner.store.set_protocol_minor(hs.remote_decoded.1).await;
                         *self.inner.handshake.write().await = Some(hs);
                         sm.mark_connected().await;
                         attempt = 0;
@@ -376,9 +377,17 @@ impl IpcClient {
                     }
                 }
                 _ = poll.tick() => {
-                    let _ = self.inner.refresh_tx.send(RefreshMsg::Resources(vec![
-                        Resource::Health, Resource::Room, Resource::Nodes, Resource::PendingAuth,
-                    ]));
+                    // Protocol 0.3 Cores send events for every view change
+                    // (and disconnect lagging clients, forcing a resync), so
+                    // only time-dependent Health is polled.  Older Cores miss
+                    // events for rooms, nodes and resolved requests.
+                    let full = self.handshake_result().await.is_some_and(|h| h.capabilities.full_events);
+                    let resources = if full {
+                        vec![Resource::Health]
+                    } else {
+                        vec![Resource::Health, Resource::Room, Resource::Nodes, Resource::PendingAuth]
+                    };
+                    let _ = self.inner.refresh_tx.send(RefreshMsg::Resources(resources));
                 }
                 _ = shutdown.changed() => break "shutdown".to_string(),
             }
@@ -443,11 +452,30 @@ impl IpcClient {
             }
 
             let mut errors = Vec::new();
-            for r in set {
-                if let Err(e) = self.refresh_one(r).await {
-                    tracing::warn!(resource = ?r, error = %e, "failed to query Core");
-                    errors.push(format!("{}: {e}", resource_label(r)));
+            // A full rebuild takes several queries; Core's `generation`
+            // (read via Health first and last) tells whether Core changed
+            // in between — if so, query again (bounded).
+            for _attempt in 0..3 {
+                errors.clear();
+                for &r in &set {
+                    if let Err(e) = self.refresh_one(r).await {
+                        tracing::warn!(resource = ?r, error = %e, "failed to query Core");
+                        errors.push(format!("{}: {e}", resource_label(r)));
+                    }
                 }
+                if !sync || !errors.is_empty() {
+                    break;
+                }
+                let before = self.generation().await;
+                if let Err(e) = self.refresh_one(Resource::Health).await {
+                    errors.push(format!("{}: {e}", resource_label(Resource::Health)));
+                    break;
+                }
+                let after = self.generation().await;
+                if before.is_none() || before == after {
+                    break;
+                }
+                tracing::debug!(?before, ?after, "Core changed during resync; querying again");
             }
 
             if sync {
@@ -465,6 +493,11 @@ impl IpcClient {
                 break;
             }
         }
+    }
+
+    /// Core's `generation` as last read through Health.
+    async fn generation(&self) -> Option<u64> {
+        self.inner.store.snapshot().await.health.and_then(|h| h.generation)
     }
 
     /// Query one resource and apply it; re-query (bounded) if an event made
@@ -519,6 +552,7 @@ fn resource_label(r: Resource) -> &'static str {
 fn required_minor(req: &IpcRequest) -> Option<u32> {
     match req {
         IpcRequest::GetServices => Some(2),
+        IpcRequest::ClearAclRules => Some(3),
         _ => None,
     }
 }
@@ -530,7 +564,10 @@ pub fn affected_resources(req: &IpcRequest) -> Vec<Resource> {
         IpcRequest::CreateRoom { .. } | IpcRequest::JoinRoom { .. } | IpcRequest::LeaveRoom { .. } => {
             vec![Room, Nodes, Health]
         }
-        IpcRequest::CreateAclRule { .. } | IpcRequest::UpdateAclRule { .. } | IpcRequest::DeleteAclRule { .. } => {
+        IpcRequest::CreateAclRule { .. }
+        | IpcRequest::UpdateAclRule { .. }
+        | IpcRequest::DeleteAclRule { .. }
+        | IpcRequest::ClearAclRules => {
             vec![AclRules, Health]
         }
         IpcRequest::CreateAclGroup { .. } | IpcRequest::UpdateAclGroup { .. } | IpcRequest::DeleteAclGroup { .. } => {

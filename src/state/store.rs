@@ -49,7 +49,7 @@ pub enum StateChange {
 /// A freshly queried resource, parsed from Core's response payload(s).
 #[derive(Debug, Clone)]
 pub enum ResourceData {
-    Health(HealthState),
+    Health(Box<HealthState>),
     Room(RoomState),
     /// `GetNodes` plus the `chosen` path of each peer from `GetPathView`
     /// (absent if the path view could not be queried).
@@ -73,7 +73,7 @@ impl ResourceData {
 
     /// Parse Core's `Health` response.
     pub fn health(v: &Value) -> Result<Self> {
-        Ok(Self::Health(decode("Health", v.clone())?))
+        Ok(Self::Health(Box::new(decode("Health", v.clone())?)))
     }
 
     /// Parse Core's `GetSystemState` response (room view).
@@ -135,6 +135,9 @@ fn decode<T: serde::de::DeserializeOwned>(what: &str, v: Value) -> Result<T> {
 struct Inner {
     state: SystemState,
     epochs: HashMap<Resource, u64>,
+    /// Core speaks protocol >= 0.3: `RoomStateChanged` / `NodeStateChanged`
+    /// carry full state and can be applied directly.
+    full_events: bool,
 }
 
 /// Thread-safe state store with change subscription.
@@ -149,9 +152,15 @@ impl StateStore {
     pub fn new() -> Self {
         let (change_tx, _) = broadcast::channel(256);
         Self {
-            inner: Arc::new(RwLock::new(Inner { state: SystemState::default(), epochs: HashMap::new() })),
+            inner: Arc::new(RwLock::new(Inner { state: SystemState::default(), epochs: HashMap::new(), full_events: false })),
             change_tx,
         }
+    }
+
+    /// Record the connected Core's protocol minor version (after each
+    /// handshake); decides how partial events are handled.
+    pub async fn set_protocol_minor(&self, minor: u32) {
+        self.inner.write().await.full_events = minor >= 3;
     }
 
     /// The current epoch of `resource`; pass it to [`Self::apply_resource`].
@@ -171,10 +180,11 @@ impl StateStore {
         let st = &mut inner.state;
         match data {
             ResourceData::Health(h) => {
-                if h.is_authenticated {
-                    st.access_auth_required = None;
-                }
-                st.health = Some(h);
+                st.access_auth_required = match h.access_auth_required {
+                    Some(flag) => flag, // protocol 0.3: authoritative
+                    None => st.access_auth_required && !h.is_authenticated,
+                };
+                st.health = Some(*h);
             }
             ResourceData::Room(r) => st.room = r,
             ResourceData::Nodes { nodes, paths } => {
@@ -220,7 +230,8 @@ impl StateStore {
         }
 
         let mut inner = self.inner.write().await;
-        let (touched, refresh) = apply_event_to(&mut inner.state, event);
+        let full = inner.full_events;
+        let (touched, refresh) = apply_event_to(&mut inner.state, event, full);
         for r in touched {
             *inner.epochs.entry(r).or_insert(0) += 1;
         }
@@ -246,9 +257,30 @@ impl Default for StateStore {
     }
 }
 
+/// `NodeStateChanged.change` (protocol 0.3): the peer's full record.
+#[derive(serde::Deserialize)]
+struct NodeRecord {
+    #[serde(default)]
+    ipv4: Option<String>,
+    #[serde(default)]
+    ipv6: Option<String>,
+    #[serde(default)]
+    hostname: Option<String>,
+    #[serde(default)]
+    display_name: Option<String>,
+    #[serde(default)]
+    user_id: Option<String>,
+    #[serde(default)]
+    user_handle: Option<String>,
+    #[serde(default)]
+    device_handle: Option<String>,
+    #[serde(default)]
+    is_authenticated: bool,
+}
+
 /// Apply `event` to `st`.  Returns (resources touched → epoch bump,
 /// resources to re-query).
-fn apply_event_to(st: &mut SystemState, event: &IpcEvent) -> (Vec<Resource>, Vec<Resource>) {
+fn apply_event_to(st: &mut SystemState, event: &IpcEvent, full_events: bool) -> (Vec<Resource>, Vec<Resource>) {
     use Resource::*;
     match event {
         IpcEvent::AccessRequestCreated {
@@ -282,9 +314,14 @@ fn apply_event_to(st: &mut SystemState, event: &IpcEvent) -> (Vec<Resource>, Vec
             st.pending_auth.retain(|r| r.request_id != *request_id);
             (vec![PendingAuth], vec![])
         }
-        IpcEvent::AccessAuthRequired { coordinator_url } => {
-            st.access_auth_required = Some(coordinator_url.clone());
+        IpcEvent::AccessAuthRequired { .. } => {
+            st.access_auth_required = true;
             (vec![], vec![Health])
+        }
+        IpcEvent::AccessRequestResolved { request_id, .. } => {
+            // The rule it created arrives as AclChanged.
+            st.pending_auth.retain(|r| r.request_id != *request_id);
+            (vec![PendingAuth], vec![])
         }
         IpcEvent::NodeAdded { device_id, ipv4, ipv6, hostname, display_name } => {
             let node = st.nodes.entry(device_id.clone()).or_insert_with(|| NodeInfo {
@@ -310,9 +347,22 @@ fn apply_event_to(st: &mut SystemState, event: &IpcEvent) -> (Vec<Resource>, Vec
             st.nodes.remove(device_id);
             (vec![Nodes], vec![])
         }
-        IpcEvent::NodeStateChanged { .. } => {
-            // `change` has no defined schema; re-query instead of guessing.
-            (vec![], vec![Nodes])
+        IpcEvent::NodeStateChanged { device_id, change } => {
+            // Protocol 0.3: `change` is the peer's full current record.
+            match (full_events, serde_json::from_value::<NodeRecord>(change.clone()), st.nodes.get_mut(device_id)) {
+                (true, Ok(r), Some(node)) => {
+                    node.ipv4 = r.ipv4;
+                    node.ipv6 = r.ipv6;
+                    node.hostname = r.hostname;
+                    node.display_name = r.display_name;
+                    node.user_id = r.user_id;
+                    node.user_handle = r.user_handle;
+                    node.device_handle = r.device_handle;
+                    node.is_authenticated = r.is_authenticated;
+                    (vec![Nodes], vec![])
+                }
+                _ => (vec![], vec![Nodes]),
+            }
         }
         IpcEvent::PathChanged { device_id, new_mode, .. } => {
             if let Some(node) = st.nodes.get_mut(device_id) {
@@ -333,10 +383,58 @@ fn apply_event_to(st: &mut SystemState, event: &IpcEvent) -> (Vec<Resource>, Vec
             }
             (vec![AclGroups], vec![AclGroups])
         }
+        IpcEvent::RoomStateChanged { room_id, room_name, peers, relay } if full_events => {
+            // Protocol 0.3: same content as GetSystemState's room view.
+            match peers.iter().map(|p| serde_json::from_value::<RoomPeer>(p.clone())).collect::<std::result::Result<Vec<_>, _>>() {
+                Ok(peers) => {
+                    st.room = RoomState { room_id: room_id.clone(), room_name: room_name.clone(), relay: relay.clone(), peers };
+                    (vec![Room], vec![])
+                }
+                Err(_) => (vec![], vec![Room, Nodes]),
+            }
+        }
         IpcEvent::RoomStateChanged { .. } => {
-            // The event's peer list lacks addresses and this device, and its
-            // relay is not populated; Core's room view is authoritative.
+            // Older Cores: the peer list lacks addresses and this device and
+            // relay is unset; re-query Core's room view.
             (vec![], vec![Room, Nodes])
+        }
+        IpcEvent::IdentityChanged {
+            device_id,
+            user_id,
+            device_handle,
+            user_handle,
+            device_display_name,
+            user_display_name,
+            device_hostname,
+            is_authenticated,
+        } => match st.health.as_mut() {
+            Some(h) => {
+                h.device_id = Some(device_id.clone());
+                h.user_id = Some(user_id.clone());
+                h.device_handle = device_handle.clone();
+                h.user_handle = user_handle.clone();
+                h.device_display_name = device_display_name.clone();
+                h.user_display_name = user_display_name.clone();
+                h.device_hostname = device_hostname.clone();
+                h.is_authenticated = *is_authenticated;
+                if *is_authenticated {
+                    st.access_auth_required = false;
+                }
+                (vec![Health], vec![])
+            }
+            None => (vec![], vec![Health]),
+        },
+        IpcEvent::SettingsChanged { scope, settings } => {
+            // Network settings are not part of the view (queried on demand;
+            // UIs re-read them on change notices).
+            if scope == "ping" {
+                if let (Some(h), Some(on)) = (st.health.as_mut(), settings.get("ping_enabled").and_then(Value::as_bool)) {
+                    h.ping_enabled = Some(on);
+                    return (vec![Health], vec![]);
+                }
+                return (vec![], vec![Health]);
+            }
+            (vec![], vec![])
         }
         IpcEvent::CoordinatorConnectionChanged { connected } => {
             if let Some(h) = st.health.as_mut() {
@@ -502,10 +600,10 @@ mod tests {
     async fn auth_required_cleared_by_authenticated_health() {
         let store = StateStore::new();
         store.apply_event(&IpcEvent::AccessAuthRequired { coordinator_url: "https://c".into() }).await;
-        assert!(store.snapshot().await.access_auth_required.is_some());
+        assert!(store.snapshot().await.access_auth_required);
         let epoch = store.epoch(Resource::Health).await;
         store.apply_resource(epoch, ResourceData::health(&core_health()).unwrap()).await;
-        assert!(store.snapshot().await.access_auth_required.is_none());
+        assert!(!store.snapshot().await.access_auth_required);
     }
 
     #[tokio::test]

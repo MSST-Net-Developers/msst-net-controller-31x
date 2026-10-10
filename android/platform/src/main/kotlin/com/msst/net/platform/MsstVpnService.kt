@@ -121,7 +121,7 @@ class MsstVpnService : VpnService() {
         if (_state.value == State.Running || _state.value == State.Sleeping) return
         _state.value = State.Starting
 
-        val res = JSONObject(MsstNative.nativeStartCore(MsstNative.dataDir(this), MsstNative.socketPath(this)))
+        val res = JSONObject(MsstNative.nativeStartCore(MsstNative.dataDir(this), MsstNative.socketPath(this), this))
         if (!res.optBoolean("ok")) return fail(errorText(res))
         ipv4 = res.getString("ipv4")
         ipv6 = res.getString("ipv6")

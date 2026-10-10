@@ -1,7 +1,37 @@
 # IPC Protocol Proposals (Controller → Core team)
 
-Status: PROPOSED — none of these are implemented in `msst-ipc-protocol`.
-Baseline: `msst-ipc-protocol` 0.2.0 (0.2 = `GetServices`).
+Baseline when written: `msst-ipc-protocol` 0.2.0.  Core answered in
+`msst-net-core-31x/docs/PROTOCOL_PROPOSALS_3.1_RESPONSE.md` (protocol 0.3.0).
+
+## Controller follow-up (protocol 0.3)
+
+| # | Core | Controller |
+|---|------|-----------|
+| P1 | vectors | `tests/core_contract.rs` decodes every vector with the Controller's decoders and applies `events.json` to the store |
+| P2 | events emitted | `RoomStateChanged` / `NodeStateChanged` applied directly; `AccessRequestResolved`, `IdentityChanged`, `SettingsChanged` handled; on 0.3 the periodic poll is Health only (older Cores keep the room/node/pending poll) |
+| P3 | `ClearAclRules` | used when the Core speaks ≥ 0.3; one-by-one fallback kept |
+| P4 | `generation` defined | full resync re-queried if `generation` moved during it |
+| P5 | deferred | — |
+| P6 | unknown patch fields rejected | shown as validation errors; edit dialog unchanged |
+| P7 | MTU 1280–1500 | UI uses Core's range (desktop, WebUI, Android) |
+| P8 | `EmbeddedCore::start(…, protect)` | JNI glue passes `VpnService.protect` on the running service (no service → socket refused); lockdown mode not yet tried on a device |
+| P9 | fixed | `null` handled; `tun_ready` shown as reported |
+| P10 | `Health.access_auth_required` | authoritative flag; event kept as fallback |
+| P11 | fixed | embedded start errors are reported by the JNI glue |
+| P12 | `errors::ALL` | every code mapped to a user message (test fails on a new unmapped code); Core text is `detail` |
+
+Verified against a rebuilt 0.3.0 Core (sandboxed): negotiated 0.3.0,
+atomic clear, event-driven ping / identity updates, MTU and patch validation
+errors, Core restart → resync.
+
+Core-side observations from 0.3 (fixed in Core a293c19):
+- `UpdateDisplayName` / `UpdateHandle` replies return `null` for unset fields.
+- The own device's IPv6 in room views and `virtual_ips` is canonical
+  (`fd22:2222:2222:2222::1`).
+
+---
+
+Original proposals:
 
 ## P1. Contract test vectors (no wire change)
 

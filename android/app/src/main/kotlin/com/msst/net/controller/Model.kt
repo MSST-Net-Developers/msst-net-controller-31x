@@ -251,6 +251,6 @@ fun parseView(v: JSONObject): ControllerView {
                 expiresAtMs = it.longOrNull("expires_at_ms"),
             )
         },
-        accessAuthRequired = !st.isNull("access_auth_required"),
+        accessAuthRequired = st.optBoolean("access_auth_required", false),
     )
 }

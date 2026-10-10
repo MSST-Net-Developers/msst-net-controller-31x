@@ -1,6 +1,7 @@
 package com.msst.net.jni
 
 import android.content.Context
+import android.net.VpnService
 import java.io.File
 
 /**
@@ -24,8 +25,14 @@ object MsstNative {
 
     // ── Core lifecycle (VpnService) ─────────────────────────────────────────
 
-    /** Start Core (no-op if running). `{"ok":true,"ipv4":…,"ipv6":…}` */
-    @JvmStatic external fun nativeStartCore(dataDir: String, socketPath: String): String
+    /**
+     * Start Core (no-op if running). `{"ok":true,"ipv4":…,"ipv6":…}`
+     *
+     * Core calls [VpnService.protect] on [service] (from its own threads) for
+     * every socket it opens, so its traffic bypasses the VPN — also with
+     * "block connections without VPN".
+     */
+    @JvmStatic external fun nativeStartCore(dataDir: String, socketPath: String, service: VpnService): String
 
     /** Hand Core the TUN fd from `ParcelFileDescriptor.detachFd()`. */
     @JvmStatic external fun nativeAttachTun(fd: Int): String

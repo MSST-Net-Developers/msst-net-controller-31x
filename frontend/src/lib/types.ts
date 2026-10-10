@@ -28,6 +28,8 @@ export interface ConnectionDiagnostics {
 
 export interface Health {
   status: string;
+  /** Advances on every Controller-visible change (restarts with Core). */
+  generation: number | null;
   device_id: string | null;
   user_id: string | null;
   device_handle: string | null;
@@ -44,6 +46,8 @@ export interface Health {
   peer_count: number | null;
   rule_count: number | null;
   ping_enabled: boolean | null;
+  /** Protocol 0.3; null from older Cores. */
+  access_auth_required: boolean | null;
 }
 
 export interface NodeInfo {
@@ -119,7 +123,8 @@ export interface SystemState {
   acl_rules: FirewallRule[];
   acl_groups: PermissionGroupDef[];
   pending_auth: PendingAuthRequest[];
-  access_auth_required: string | null;
+  /** Core needs MSST access authentication. */
+  access_auth_required: boolean;
 }
 
 export interface ControllerView {
@@ -127,7 +132,7 @@ export interface ControllerView {
   diagnostics: ConnectionDiagnostics;
   core_protocol: string | null;
   controller_protocol: string;
-  capabilities: { get_services: boolean };
+  capabilities: { get_services: boolean; clear_acl_rules: boolean; full_events: boolean };
   state: SystemState;
 }
 

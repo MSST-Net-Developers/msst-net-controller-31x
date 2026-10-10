@@ -363,13 +363,13 @@ private fun DiagnosticsCard(view: ControllerView?, vm: MainViewModel, onShowLogs
                                     RadioLabel("自定义", mtuCustom) { mtuCustom = true }
                                 }
                                 if (mtuCustom) {
-                                    OutlinedTextField(mtuInput, { v -> mtuInput = v.filter(Char::isDigit) }, label = { Text("MTU 值") }, singleLine = true,
+                                    OutlinedTextField(mtuInput, { v -> mtuInput = v.filter(Char::isDigit) }, label = { Text("MTU 值（1280–1500）") }, singleLine = true,
                                         modifier = Modifier.fillMaxWidth(),
                                         trailingIcon = {
                                             TextButton(onClick = {
-                                                // Core stores MTU as u16 without range checks (PROTOCOL_PROPOSALS P7).
+                                                // Range defined by Core (protocol response P7).
                                                 val v = mtuInput.toIntOrNull()
-                                                if (v == null || v !in 1..65535) inputError = "MTU 应为 1–65535 之间的整数"
+                                                if (v == null || v !in 1280..1500) inputError = "MTU 应为 1280–1500 之间的整数"
                                                 else { inputError = null; vm.patchNetSettings(JSONObject().put("mtu_override", v)) }
                                             }) { Text("应用") }
                                         })

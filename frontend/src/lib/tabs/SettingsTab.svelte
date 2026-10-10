@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import { ipc, errorMessage, isTauri, webui } from '$lib/api/client';
   import { R } from '$lib/api/requests';
   import { controller } from '$lib/controller.svelte';
@@ -111,8 +111,8 @@
 
   function applyMtu() {
     const v = Number(mtuInput);
-    // Core stores MTU as u16 without range checks (PROTOCOL_PROPOSALS P7).
-    if (!Number.isInteger(v) || v < 1 || v > 65535) return void (settingsError = 'MTU 应为 1–65535 之间的整数');
+    // Range defined by Core (protocol response P7); Core rejects others.
+    if (!Number.isInteger(v) || v < 1280 || v > 1500) return void (settingsError = 'MTU 应为 1280–1500 之间的整数');
     patch({ mtu_override: v });
   }
   function applyKeepalive() {
@@ -148,6 +148,19 @@
       relaysError = errorMessage(e);
     }
   }
+
+  // Settings changed elsewhere (another Controller, SettingsChanged): keep
+  // the open panel current without touching text being edited.
+  onMount(() =>
+    controller.listen((n) => {
+      if (n.type !== 'changed' || !advanced || settingsBusy) return;
+      ipc<NetSettings>(R.getNetSettings())
+        .then((s) => {
+          if (!settingsBusy) settings = s;
+        })
+        .catch(() => {});
+    }),
+  );
 
   function toggleAdvanced() {
     advanced = !advanced;
@@ -432,7 +445,7 @@
                       </label>
                       <label class="adv-radio"><input type="radio" name="mtu" value="custom" bind:group={mtuMode} disabled={settingsBusy} /><span>自定义</span></label>
                       {#if mtuMode === 'custom'}
-                        <input type="text" class="adv-inline-input" bind:value={mtuInput} placeholder="如 1400" />
+                        <input type="text" class="adv-inline-input" bind:value={mtuInput} placeholder="1280–1500" />
                         <button class="mini-btn" onclick={applyMtu} disabled={settingsBusy}>应用</button>
                       {/if}
                     </div>

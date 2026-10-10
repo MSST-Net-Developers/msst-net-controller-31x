@@ -37,13 +37,18 @@ pub struct HandshakeResult {
 pub struct Capabilities {
     /// `GetServices` (protocol 0.2).
     pub get_services: bool,
+    /// `ClearAclRules` (protocol 0.3).
+    pub clear_acl_rules: bool,
+    /// Events cover every view change and `RoomStateChanged` /
+    /// `NodeStateChanged` carry full state (protocol 0.3).
+    pub full_events: bool,
 }
 
 impl Capabilities {
     /// Derive capabilities from a remote protocol version.
     pub fn from_version(remote: (u32, u32, u32)) -> Self {
         let (_, minor, _) = remote;
-        Self { get_services: minor >= 2 }
+        Self { get_services: minor >= 2, clear_acl_rules: minor >= 3, full_events: minor >= 3 }
     }
 }
 
@@ -94,6 +99,10 @@ mod tests {
         assert!(!Capabilities::from_version((0, 1, 0)).get_services);
         assert!(Capabilities::from_version((0, 2, 0)).get_services);
         assert!(Capabilities::from_version((0, 9, 0)).get_services);
+        let v2 = Capabilities::from_version((0, 2, 0));
+        assert!(!v2.clear_acl_rules && !v2.full_events);
+        let v3 = Capabilities::from_version((0, 3, 0));
+        assert!(v3.clear_acl_rules && v3.full_events);
     }
 
     async fn run(core_version: u32) -> (Result<HandshakeResult>, u32) {

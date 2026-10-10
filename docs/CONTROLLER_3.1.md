@@ -17,6 +17,9 @@ android/             Android app (Compose) + rust/ JNI glue (embedded Core + thi
 docs/PROTOCOL_PROPOSALS_3.1.md   issues found in Core / protocol (not changed here)
 ```
 
+Protocol: built against `msst-ipc-protocol` 0.3; Cores speaking 0.1/0.2
+still work (features they lack are disabled with an explanation).
+
 Every front end uses the same three operations: read the Controller view,
 send an `IpcRequest` from the shared `msst-ipc-protocol` crate, and get
 notified when the view changed.  Core is the only source of networking
@@ -49,7 +52,10 @@ failed logins are delayed.
 
 Core runs inside the app (`EmbeddedCore`) with its data in the app's
 `filesDir` — the 3.0.x location, so the device identity survives the
-upgrade.  The UI talks to it over IPC (`filesDir/ipc.sock`).
+upgrade.  The UI talks to it over IPC (`filesDir/ipc.sock`).  Core protects
+every socket it opens through `VpnService.protect` (passed in by the JNI
+glue), so it keeps working with "always-on VPN + block connections without
+VPN".
 
 ## Behaviour changes from 3.0.x (deliberate)
 
@@ -71,10 +77,13 @@ upgrade.  The UI talks to it over IPC (`filesDir/ipc.sock`).
 
 - Rust: unit + integration tests (FakeCore speaks the real handshake and
   framing), WebUI route/security tests, JNI glue tests on the host.
-- End to end against a real (sandboxed) 3.1.x Core: sync, commands,
+- Core contract vectors (`tests/core_contract.rs`, reads
+  `../msst-net-core-31x/crates/msst-ipc-protocol/tests/vectors`).
+- End to end against a real (sandboxed) 3.1.x Core (protocol 0.2 and 0.3): sync, commands,
   rejections, rule clearing, Core restart → automatic resync, WebUI login and
   every tab rendered in headless Chromium.
 - Android: APK builds for arm64-v8a / armeabi-v7a / x86_64, lint clean.
   **Not run on a device or emulator** (no system image installed here):
-  VpnService start/sleep/wake, TUN hand-over and notifications are unverified.
+  VpnService start/sleep/wake, TUN hand-over, socket protection under
+  lockdown mode and notifications are unverified.
 - Desktop Tauri app: compiles; not launched in this environment.

@@ -67,6 +67,9 @@ pub enum SyncState {
 #[serde(default)]
 pub struct HealthState {
     pub status: String,
+    /// Advances on every Controller-visible change; restarts from 0 when
+    /// Core restarts (protocol docs, P4).
+    pub generation: Option<u64>,
     pub device_id: Option<String>,
     pub user_id: Option<String>,
     pub device_handle: Option<String>,
@@ -85,6 +88,9 @@ pub struct HealthState {
     pub peer_count: Option<u64>,
     pub rule_count: Option<u64>,
     pub ping_enabled: Option<bool>,
+    /// Core needs MSST access authentication (protocol 0.3; `None` from
+    /// older Cores).
+    pub access_auth_required: Option<bool>,
 }
 
 // ── Nodes ────────────────────────────────────────────────────────────────────
@@ -207,9 +213,11 @@ pub struct SystemState {
     pub acl_rules: Vec<AclRule>,
     pub acl_groups: Vec<AclGroup>,
     pub pending_auth: Vec<PendingAuthRequest>,
-    /// Set by Core's `AccessAuthRequired` event (coordinator URL); cleared
-    /// once Core's `Health` reports a valid authentication.
-    pub access_auth_required: Option<String>,
+    /// Core needs MSST access authentication.  Source of truth is
+    /// `Health.access_auth_required` (protocol 0.3); with older Cores it is
+    /// set by the `AccessAuthRequired` event and cleared once `Health`
+    /// reports a valid authentication.
+    pub access_auth_required: bool,
 }
 
 /// Sections of [`SystemState`] that can be re-queried from Core individually.

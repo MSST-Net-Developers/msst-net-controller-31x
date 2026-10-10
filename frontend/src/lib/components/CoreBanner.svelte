@@ -29,7 +29,7 @@
           text: '部分状态读取失败，相关内容可能缺失',
           detail: v.state.sync.state === 'failed' ? v.state.sync.message : null,
         };
-      case v.state.access_auth_required !== null && !v.state.health?.is_authenticated:
+      case v.state.access_auth_required && !v.state.health?.is_authenticated:
         return { kind: 'warn', text: 'MSST 接入认证未完成或已过期，请在首页右下角完成接入认证', detail: null };
       default:
         return null;

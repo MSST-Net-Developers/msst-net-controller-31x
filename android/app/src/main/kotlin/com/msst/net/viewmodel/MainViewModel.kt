@@ -112,7 +112,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     init {
         viewModelScope.launch { refreshView() }
         viewModelScope.launch {
-            Controller.notices.filterIsInstance<Notice.Changed>().collect { refreshView() }
+            Controller.notices.filterIsInstance<Notice.Changed>().collect {
+                refreshView()
+                // Settings changed elsewhere (SettingsChanged): keep an open panel current.
+                if (_netSettings.value != null) loadNetSettings()
+            }
         }
         // Safety net for missed notices.
         viewModelScope.launch {

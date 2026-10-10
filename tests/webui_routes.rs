@@ -120,12 +120,13 @@ async fn login_view_ipc_logout() {
     assert_eq!(status, StatusCode::OK, "{v}");
     assert_eq!(v["status"], "ok");
 
-    // Core's rejection is surfaced with its code and message.
+    // Core's rejection: its code, a user message, and Core's text as detail.
     let body = json!({ "type": "delete_acl_rule", "params": { "rule_id": "x" } });
     let (status, _, v) = call(&e.state, [127, 0, 0, 1], post("/api/ipc", body, Some(&cookie))).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(v["code"], "not_found");
-    assert_eq!(v["message"], "Rule 'x' not found");
+    assert_eq!(v["message"], "找不到对应的对象，它可能已被删除或已处理。");
+    assert_eq!(v["detail"], "Rule 'x' not found");
 
     let (status, _, v) = call(&e.state, [127, 0, 0, 1], post("/api/ipc", json!({ "type": "nope" }), Some(&cookie))).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
