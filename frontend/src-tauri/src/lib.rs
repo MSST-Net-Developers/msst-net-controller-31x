@@ -1,68 +1,84 @@
 //! MSST-Net Controller — Tauri application shell.
 //!
-//! Bridges the Controller library to the Tauri frontend via `#[tauri::command]`
-//! functions exposed through the `tauri_commands` module.
-
-use std::sync::Arc;
-use tokio::sync::RwLock;
+//! Owns the single `IpcClient` for the process and bridges it to the
+//! webview: commands from `msst_net_controller::tauri_commands`, a
+//! `controller-changed` event when the view must be re-read, and a system
+//! notification for each new interactive access request (as in 3.0.x).
 
 use msst_net_controller::ipc::client::{IpcClient, IpcClientConfig};
+use msst_net_controller::notify::{UiNotice, spawn_notifier};
 use msst_net_controller::state::StateStore;
-use msst_net_controller::tauri_commands::ControllerState;
+use msst_net_controller::tauri_commands::{self, ControllerState};
+use tauri::{AppHandle, Emitter, Manager};
+
+/// Save exported log text via a native save dialog (3.0.x `export_logs`).
+/// Returns `false` if the user cancelled.
+#[tauri::command]
+async fn export_logs(content: String) -> Result<bool, String> {
+    let path = tokio::task::spawn_blocking(|| rfd::FileDialog::new().set_file_name("msst-net-logs.txt").save_file())
+        .await
+        .map_err(|e| e.to_string())?;
+    match path {
+        Some(p) => std::fs::write(&p, content).map(|_| true).map_err(|e| format!("无法写入 {}: {e}", p.display())),
+        None => Ok(false),
+    }
+}
+
+fn notify_access_request(app: &AppHandle, notice: &UiNotice) {
+    use tauri_plugin_notification::NotificationExt;
+    if let UiNotice::AccessRequest { src_device_id, src_device_display_name, proto, dst_port, service_name, .. } = notice {
+        let who = src_device_display_name.as_deref().unwrap_or(src_device_id);
+        let what = match service_name {
+            Some(s) => format!("{s}（{proto}:{dst_port}）"),
+            None => format!("{proto}:{dst_port}"),
+        };
+        let _ = app
+            .notification()
+            .builder()
+            .title("访问请求")
+            .body(format!("{who} 想访问您的 {what} 服务，请在应用中处理"))
+            .show();
+    }
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::new("info"))
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
         .init();
 
-    let state_store = StateStore::new();
-    let ipc_client = IpcClient::new(IpcClientConfig::default(), state_store.clone());
-
-    let controller_state = Arc::new(RwLock::new(ControllerState {
-        ipc_client,
-        state_store,
-    }));
-
     tauri::Builder::default()
-        .manage(controller_state)
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
+        .setup(|app| {
+            // IpcClient spawns tasks, so create it on Tauri's tokio runtime.
+            let client = tauri::async_runtime::block_on(async {
+                IpcClient::new(IpcClientConfig::default(), StateStore::new())
+            });
+            let handle = app.handle().clone();
+            tauri::async_runtime::block_on(async {
+                spawn_notifier(&client, move |notice| match notice {
+                    UiNotice::Changed => {
+                        let _ = handle.emit("controller-changed", ());
+                    }
+                    n @ UiNotice::AccessRequest { .. } => notify_access_request(&handle, &n),
+                })
+            });
+            app.manage(ControllerState { client });
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                window.state::<ControllerState>().client.shutdown();
+            }
+        })
         .invoke_handler(tauri::generate_handler![
-            msst_net_controller::tauri_commands::get_connection_status,
-            msst_net_controller::tauri_commands::get_connection_diagnostics,
-            msst_net_controller::tauri_commands::get_system_state,
-            msst_net_controller::tauri_commands::get_health,
-            msst_net_controller::tauri_commands::get_nodes,
-            msst_net_controller::tauri_commands::get_room,
-            msst_net_controller::tauri_commands::get_acl_rules,
-            msst_net_controller::tauri_commands::get_acl_groups,
-            msst_net_controller::tauri_commands::create_acl_group,
-            msst_net_controller::tauri_commands::update_acl_group,
-            msst_net_controller::tauri_commands::delete_acl_group,
-            msst_net_controller::tauri_commands::get_pending_auth,
-            msst_net_controller::tauri_commands::create_room,
-            msst_net_controller::tauri_commands::join_room,
-            msst_net_controller::tauri_commands::leave_room,
-            msst_net_controller::tauri_commands::create_acl_rule,
-            msst_net_controller::tauri_commands::update_acl_rule,
-            msst_net_controller::tauri_commands::delete_acl_rule,
-            msst_net_controller::tauri_commands::clear_acl_rules,
-            msst_net_controller::tauri_commands::list_access_log,
-            msst_net_controller::tauri_commands::submit_auth_decision,
-            msst_net_controller::tauri_commands::get_net_settings,
-            msst_net_controller::tauri_commands::set_net_settings,
-            msst_net_controller::tauri_commands::get_path_view,
-            msst_net_controller::tauri_commands::get_traffic_stats,
-            msst_net_controller::tauri_commands::get_endpoints,
-            msst_net_controller::tauri_commands::refresh_endpoint,
-            msst_net_controller::tauri_commands::get_relays,
-            msst_net_controller::tauri_commands::set_ping_enabled,
-            msst_net_controller::tauri_commands::start_diag_ping,
-            msst_net_controller::tauri_commands::get_diag_ping_result,
-            msst_net_controller::tauri_commands::update_display_name,
-            msst_net_controller::tauri_commands::update_handle,
-            msst_net_controller::tauri_commands::re_register,
-            msst_net_controller::tauri_commands::get_logs,
-            msst_net_controller::tauri_commands::clear_logs,
+            tauri_commands::get_view,
+            tauri_commands::ipc_request,
+            tauri_commands::clear_acl_rules,
+            export_logs,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

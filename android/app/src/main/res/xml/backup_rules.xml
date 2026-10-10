@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- 身份文件参与备份，私钥不在 include 范围内故自动排除 -->
+    <include domain="file" path="identity.json" />
+    <include domain="file" path="config.yaml" />
+</full-backup-content>

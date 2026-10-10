@@ -15,10 +15,15 @@ path = "src/lib.rs"
 name = "msst-net-controller"
 path = "src/main.rs"
 
+[[bin]]
+name = "msst-net-webui"
+path = "src/bin/msst-net-webui.rs"
+required-features = ["webui"]
+
 [features]
 default = []
 tauri = ["dep:tauri"]
-webui = ["dep:axum", "dep:tower", "dep:tower-http", "dep:futures-util"]
+webui = ["dep:axum", "dep:axum-server", "dep:rustls", "dep:rcgen", "dep:argon2", "dep:rand", "dep:ipnetwork", "dep:toml", "dep:rpassword", "dep:rust-embed", "dep:mime_guess"]
 
 [dependencies]
 # ── IPC protocol (shared with Core) ──────────────────────────────────────────
@@ -45,10 +50,18 @@ clap = { version = "4", features = ["derive", "env"] }
 tauri = { version = "2", optional = true }
 
 # ── WebUI backend (optional) ─────────────────────────────────────────────────
+# Same security stack as the 3.0.x WebUI (password, sessions, TLS, CIDR allowlist).
 axum = { version = "0.8", features = ["ws", "macros"], optional = true }
-tower = { version = "0.5", optional = true }
-tower-http = { version = "0.6", features = ["cors", "trace"], optional = true }
-futures-util = { version = "0.3", optional = true }
+axum-server = { version = "0.7", features = ["tls-rustls"], optional = true }
+rustls = { version = "0.23", default-features = false, features = ["ring"], optional = true }
+rcgen = { version = "0.12", optional = true }
+argon2 = { version = "0.5", optional = true }
+rand = { version = "0.8", optional = true }
+ipnetwork = { version = "0.20", optional = true }
+toml = { version = "0.8", optional = true }
+rpassword = { version = "7", optional = true }
+rust-embed = { version = "8", optional = true }
+mime_guess = { version = "2", optional = true }
 
 # ── Platform-specific IPC transport ──────────────────────────────────────────
 [target.'cfg(unix)'.dependencies]
@@ -58,4 +71,4 @@ tokio = { version = "1", features = ["full", "net"] }
 tokio = { version = "1", features = ["full", "net"] }
 
 [dev-dependencies]
-tokio-test = "0.4"
+tower = "0.5"

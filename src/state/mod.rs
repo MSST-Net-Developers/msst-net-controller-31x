@@ -3,5 +3,5 @@
 pub mod store;
 pub mod types;
 
-pub use store::{StateChange, StateStore};
+pub use store::{ResourceData, StateChange, StateStore};
 pub use types::*;

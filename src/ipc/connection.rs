@@ -45,6 +45,9 @@ pub struct ConnectionDiagnostics {
     pub last_disconnected_at: Option<Instant>,
     /// Duration of the last connection (from connect to disconnect).
     pub last_connection_duration_ms: Option<u64>,
+    /// The most recent connection failure, for display (e.g. "Core not
+    /// running", "protocol version mismatch").  Cleared on successful connect.
+    pub last_error: Option<String>,
     /// Recent transition history (most recent last, bounded to 64 entries).
     #[serde(skip)]
     pub recent_transitions: VecDeque<Transition>,
@@ -143,6 +146,7 @@ impl ConnectionStateMachine {
         inner.diagnostics.total_connect_attempts += 1;
         inner.diagnostics.successful_connects += 1;
         inner.diagnostics.last_connected_at = Some(now);
+        inner.diagnostics.last_error = None;
 
         inner.status = ConnectionStatus::Connected;
 
@@ -200,6 +204,22 @@ impl ConnectionStateMachine {
     /// Transition to `Reconnecting`.
     ///
     /// Valid from: `Connecting`, `Connected`
+    /// Record a connection failure reason (shown in diagnostics).
+    pub async fn set_last_error(&self, error: impl Into<String>) {
+        self.inner.write().await.diagnostics.last_error = Some(error.into());
+    }
+
+    /// Core speaks an incompatible protocol major version.
+    pub async fn mark_incompatible(&self, reason: String) -> bool {
+        {
+            let mut inner = self.inner.write().await;
+            inner.diagnostics.total_connect_attempts += 1;
+            inner.diagnostics.version_mismatches += 1;
+            inner.diagnostics.last_error = Some(reason.clone());
+        }
+        self.transition(ConnectionStatus::Incompatible, Some(reason)).await
+    }
+
     pub async fn begin_reconnecting(&self, attempt: u32, next_retry_ms: u64) -> bool {
         let mut inner = self.inner.write().await;
         let target = ConnectionStatus::Reconnecting {
@@ -292,6 +312,9 @@ fn is_valid_transition(from: &ConnectionStatus, to: &ConnectionStatus) -> bool {
         | (_, Disconnected)
         // Same state (reconnecting with updated attempt count)
         | (Reconnecting { .. }, Reconnecting { .. })
+        // Version handshake rejected; retried slowly
+        | (Connecting, Incompatible)
+        | (Incompatible, Connecting)
     )
 }
 

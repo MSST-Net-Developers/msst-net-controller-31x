@@ -1,262 +1,242 @@
-//! State store — applies IPC events and exposes read snapshots.
+//! State store — the Controller's view of Core state.
 //!
-//! The [`StateStore`] is the single source of truth for the Controller's view
-//! of Core state.  It is updated **only** by:
+//! The [`StateStore`] is updated **only** by:
 //!
-//! 1. Applying a full snapshot from `GetSystemState`
-//! 2. Applying individual [`IpcEvent`]s from the event stream
+//! 1. Query results from Core ([`StateStore::apply_resource`]), one
+//!    [`Resource`] at a time — Core has no single combined snapshot request,
+//!    so the IPC client rebuilds the view by querying every resource after
+//!    each (re)connect.
+//! 2. Push events ([`StateStore::apply_event`]).
 //!
-//! The UI layer reads state through [`StateStore::snapshot`] or
-//! [`StateStore::subscribe`] and never mutates it directly.
+//! ## Stale query results
+//!
+//! Events and query results can interleave: an event may arrive while a
+//! query for the same resource is in flight, and the (older) query result
+//! would then overwrite the newer event.  Every resource therefore has an
+//! epoch that is bumped by each event touching it; a query result is only
+//! applied if the epoch is unchanged since the query was sent
+//! ([`StateStore::epoch`] → query → [`StateStore::apply_resource`]).
+//! A rejected result is re-queried by the caller.
+//!
+//! The UI layer reads state through [`StateStore::snapshot`] and listens to
+//! [`StateStore::subscribe`]; it never mutates the store.
 
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use msst_ipc_protocol::IpcEvent;
-use tokio::sync::{broadcast, RwLock};
+use serde_json::Value;
+use tokio::sync::{RwLock, broadcast};
 
 use super::types::*;
+use crate::error::{ControllerError, Result};
 
-// ── StateStore ───────────────────────────────────────────────────────────────
-
-/// Thread-safe state store with event subscription.
-#[derive(Clone)]
-pub struct StateStore {
-    inner: Arc<RwLock<SystemState>>,
-    event_tx: broadcast::Sender<StateChange>,
-}
+// ── Change notifications ─────────────────────────────────────────────────────
 
 /// Describes a state change for subscribers.
 #[derive(Debug, Clone)]
 pub enum StateChange {
-    /// Full state replaced (from snapshot).
-    SnapshotApplied,
-    /// A single event was applied.
+    /// A resource was replaced by a fresh query result.
+    ResourceRefreshed(Resource),
+    /// A push event was applied.
     EventApplied(IpcEvent),
+    /// The sync state changed.
+    SyncChanged(SyncState),
+}
+
+// ── Parsed query results ─────────────────────────────────────────────────────
+
+/// A freshly queried resource, parsed from Core's response payload(s).
+#[derive(Debug, Clone)]
+pub enum ResourceData {
+    Health(HealthState),
+    Room(RoomState),
+    /// `GetNodes` plus the `chosen` path of each peer from `GetPathView`
+    /// (absent if the path view could not be queried).
+    Nodes { nodes: Vec<NodeInfo>, paths: Option<HashMap<String, String>> },
+    AclRules(Vec<AclRule>),
+    AclGroups(Vec<AclGroup>),
+    PendingAuth(Vec<PendingAuthRequest>),
+}
+
+impl ResourceData {
+    pub fn resource(&self) -> Resource {
+        match self {
+            Self::Health(_) => Resource::Health,
+            Self::Room(_) => Resource::Room,
+            Self::Nodes { .. } => Resource::Nodes,
+            Self::AclRules(_) => Resource::AclRules,
+            Self::AclGroups(_) => Resource::AclGroups,
+            Self::PendingAuth(_) => Resource::PendingAuth,
+        }
+    }
+
+    /// Parse Core's `Health` response.
+    pub fn health(v: &Value) -> Result<Self> {
+        Ok(Self::Health(decode("Health", v.clone())?))
+    }
+
+    /// Parse Core's `GetSystemState` response (room view).
+    pub fn room(v: &Value) -> Result<Self> {
+        Ok(Self::Room(decode("GetSystemState", v.clone())?))
+    }
+
+    /// Parse Core's `GetNodes` response and (optionally) `GetPathView`.
+    pub fn nodes(nodes: &Value, path_view: Option<&Value>) -> Result<Self> {
+        let nodes: Vec<NodeInfo> = decode("GetNodes", list(nodes, "nodes", "GetNodes")?)?;
+        let paths = path_view.map(|pv| {
+            pv.get("peers")
+                .and_then(Value::as_array)
+                .map(|peers| {
+                    peers
+                        .iter()
+                        .filter_map(|p| Some((p.get("device_id")?.as_str()?.to_string(), p.get("chosen")?.as_str()?.to_string())))
+                        .collect()
+                })
+                .unwrap_or_default()
+        });
+        Ok(Self::Nodes { nodes, paths })
+    }
+
+    /// Parse Core's `GetAclRules` response.
+    pub fn acl_rules(v: &Value) -> Result<Self> {
+        Ok(Self::AclRules(decode("GetAclRules", list(v, "rules", "GetAclRules")?)?))
+    }
+
+    /// Parse Core's `GetAclGroups` response.
+    pub fn acl_groups(v: &Value) -> Result<Self> {
+        Ok(Self::AclGroups(decode("GetAclGroups", list(v, "groups", "GetAclGroups")?)?))
+    }
+
+    /// Parse Core's `GetPendingAuth` response; `now_ms` anchors the
+    /// relative `expires_in_secs` to a local deadline.
+    pub fn pending_auth(v: &Value, now_ms: u64) -> Result<Self> {
+        let mut reqs: Vec<PendingAuthRequest> = decode("GetPendingAuth", list(v, "requests", "GetPendingAuth")?)?;
+        for r in &mut reqs {
+            r.expires_at_ms = r.expires_in_secs.map(|s| now_ms + (s.max(0) as u64) * 1000);
+        }
+        Ok(Self::PendingAuth(reqs))
+    }
+}
+
+fn list(v: &Value, key: &str, what: &str) -> Result<Value> {
+    v.get(key)
+        .filter(|x| x.is_array())
+        .cloned()
+        .ok_or_else(|| ControllerError::Codec(format!("{what}: response has no `{key}` array")))
+}
+
+fn decode<T: serde::de::DeserializeOwned>(what: &str, v: Value) -> Result<T> {
+    serde_json::from_value(v).map_err(|e| ControllerError::Codec(format!("{what}: unexpected response: {e}")))
+}
+
+// ── StateStore ───────────────────────────────────────────────────────────────
+
+struct Inner {
+    state: SystemState,
+    epochs: HashMap<Resource, u64>,
+}
+
+/// Thread-safe state store with change subscription.
+#[derive(Clone)]
+pub struct StateStore {
+    inner: Arc<RwLock<Inner>>,
+    change_tx: broadcast::Sender<StateChange>,
 }
 
 impl StateStore {
     /// Create a new empty state store.
     pub fn new() -> Self {
-        let (event_tx, _) = broadcast::channel(256);
+        let (change_tx, _) = broadcast::channel(256);
         Self {
-            inner: Arc::new(RwLock::new(SystemState::default())),
-            event_tx,
+            inner: Arc::new(RwLock::new(Inner { state: SystemState::default(), epochs: HashMap::new() })),
+            change_tx,
         }
     }
 
-    /// Apply a full system state snapshot (from `GetSystemState` response).
-    ///
-    /// Replaces all local state with the snapshot data.
-    pub async fn apply_snapshot(&self, data: &serde_json::Value) {
-        let mut state = self.inner.write().await;
-
-        // Health
-        if let Some(Ok(health)) = data.get("health").map(|h| serde_json::from_value(h.clone())) {
-            state.health = health;
-        }
-
-        // Nodes
-        if let Some(nodes) = data.get("nodes").and_then(|v| v.as_array()) {
-            state.nodes.clear();
-            for node in nodes {
-                if let Ok(info) = serde_json::from_value::<NodeInfo>(node.clone()) {
-                    state.nodes.insert(info.device_id.clone(), info);
-                }
-            }
-        }
-
-        // Room
-        if let Some(Ok(r)) = data.get("room").map(|v| serde_json::from_value(v.clone())) {
-            state.room = r;
-        }
-
-        // ACL rules
-        if let Some(rules) = data.get("acl_rules").and_then(|v| v.as_array()) {
-            state.acl_rules = rules
-                .iter()
-                .filter_map(|r| serde_json::from_value(r.clone()).ok())
-                .collect();
-        }
-
-        // ACL groups
-        if let Some(groups) = data.get("acl_groups").and_then(|v| v.as_array()) {
-            state.acl_groups = groups
-                .iter()
-                .filter_map(|g| serde_json::from_value(g.clone()).ok())
-                .collect();
-        }
-
-        // Pending auth
-        if let Some(auth) = data.get("pending_auth").and_then(|v| v.as_array()) {
-            state.pending_auth = auth
-                .iter()
-                .filter_map(|a| serde_json::from_value(a.clone()).ok())
-                .collect();
-        }
-
-        drop(state);
-        let _ = self.event_tx.send(StateChange::SnapshotApplied);
+    /// The current epoch of `resource`; pass it to [`Self::apply_resource`].
+    pub async fn epoch(&self, resource: Resource) -> u64 {
+        self.inner.read().await.epochs.get(&resource).copied().unwrap_or(0)
     }
 
-    /// Apply a single IPC event to the state.
-    pub async fn apply_event(&self, event: &IpcEvent) {
-        let mut state = self.inner.write().await;
-
-        match event {
-            // ── Auth events ──────────────────────────────────────────────────
-            IpcEvent::AccessRequestCreated {
-                request_id,
-                src_device_id,
-                src_user_id,
-                src_device_display_name,
-                src_user_display_name,
-                proto,
-                dst_port,
-                service_name,
-            } => {
-                // Deduplicate by request_id
-                if !state.pending_auth.iter().any(|r| r.request_id == *request_id) {
-                    state.pending_auth.push(PendingAuthRequest {
-                        request_id: request_id.clone(),
-                        src_device_id: src_device_id.clone(),
-                        src_user_id: src_user_id.clone(),
-                        src_device_display_name: src_device_display_name.clone(),
-                        src_user_display_name: src_user_display_name.clone(),
-                        proto: proto.clone(),
-                        dst_port: *dst_port,
-                        service_name: service_name.clone(),
-                        expires_at: None,
-                    });
-                }
-            }
-
-            IpcEvent::AccessRequestTimeout { request_id } => {
-                state.pending_auth.retain(|r| r.request_id != *request_id);
-            }
-
-            IpcEvent::AccessAuthRequired { .. } => {
-                // Mark as not authenticated — the UI layer handles prompting.
-                state.health.is_authenticated = false;
-            }
-
-            // ── Node lifecycle ───────────────────────────────────────────────
-            IpcEvent::NodeAdded {
-                device_id,
-                ipv4,
-                ipv6,
-                hostname,
-                display_name,
-            } => {
-                state.nodes.insert(
-                    device_id.clone(),
-                    NodeInfo {
-                        device_id: device_id.clone(),
-                        ipv4: ipv4.clone(),
-                        ipv6: ipv6.clone(),
-                        hostname: hostname.clone(),
-                        display_name: display_name.clone(),
-                        path_mode: None,
-                    },
-                );
-            }
-
-            IpcEvent::NodeRemoved { device_id } => {
-                state.nodes.remove(device_id);
-            }
-
-            IpcEvent::NodeStateChanged { device_id, change } => {
-                if let Some(node) = state.nodes.get_mut(device_id) {
-                    // Apply partial changes
-                    if let Some(dn) = change.get("display_name").and_then(|v| v.as_str()) {
-                        node.display_name = Some(dn.to_string());
-                    }
-                    if let Some(hn) = change.get("hostname").and_then(|v| v.as_str()) {
-                        node.hostname = Some(hn.to_string());
-                    }
-                    if let Some(pm) = change.get("path_mode").and_then(|v| v.as_str()) {
-                        node.path_mode = Some(pm.to_string());
-                    }
-                }
-            }
-
-            // ── Path events ──────────────────────────────────────────────────
-            IpcEvent::PathChanged {
-                device_id,
-                new_mode,
-                ..
-            } => {
-                if let Some(node) = state.nodes.get_mut(device_id) {
-                    node.path_mode = Some(new_mode.clone());
-                }
-            }
-
-            // ── ACL events ───────────────────────────────────────────────────
-            IpcEvent::AclChanged { rule_id, action } => {
-                match action.as_str() {
-                    "deleted" => {
-                        state.acl_rules.retain(|r| r.id != *rule_id);
-                    }
-                    "created" | "updated" => {
-                        // The event doesn't carry the full rule.
-                        // A snapshot refresh or explicit GetAclRules is needed.
-                        // For now, mark it as stale — the client layer should
-                        // issue a follow-up GetAclRules query.
-                    }
-                    _ => {}
-                }
-            }
-
-            IpcEvent::AclGroupChanged { group_id, action } => {
-                match action.as_str() {
-                    "deleted" => {
-                        state.acl_groups.retain(|g| g.id != *group_id);
-                    }
-                    "created" | "updated" => {
-                        // Same as AclChanged — need follow-up query.
-                    }
-                    _ => {}
-                }
-            }
-
-            // ── Room events ──────────────────────────────────────────────────
-            IpcEvent::RoomStateChanged {
-                room_id,
-                room_name,
-                peers,
-                relay,
-            } => {
-                state.room = RoomState {
-                    room_id: room_id.clone(),
-                    room_name: room_name.clone(),
-                    relay: relay.clone(),
-                    peers: peers
-                        .iter()
-                        .filter_map(|p| serde_json::from_value(p.clone()).ok())
-                        .collect(),
-                };
-            }
-
-            // ── Coordinator connection ───────────────────────────────────────
-            IpcEvent::CoordinatorConnectionChanged { connected } => {
-                state.health.ws_connected = Some(*connected);
-            }
-
-            // ── Diagnostic (log) — no state change ──────────────────────────
-            IpcEvent::Diagnostic { .. } => {}
+    /// Replace a resource with a query result, unless an event touched the
+    /// resource after `epoch` was read.  Returns `false` if the result was
+    /// discarded as stale (the caller should query again).
+    pub async fn apply_resource(&self, epoch: u64, data: ResourceData) -> bool {
+        let resource = data.resource();
+        let mut inner = self.inner.write().await;
+        if inner.epochs.get(&resource).copied().unwrap_or(0) != epoch {
+            return false;
         }
-
-        drop(state);
-        let _ = self.event_tx.send(StateChange::EventApplied(event.clone()));
+        let st = &mut inner.state;
+        match data {
+            ResourceData::Health(h) => {
+                if h.is_authenticated {
+                    st.access_auth_required = None;
+                }
+                st.health = Some(h);
+            }
+            ResourceData::Room(r) => st.room = r,
+            ResourceData::Nodes { nodes, paths } => {
+                let old = std::mem::take(&mut st.nodes);
+                st.nodes = nodes
+                    .into_iter()
+                    .map(|mut n| {
+                        n.path_mode = match &paths {
+                            Some(p) => p.get(&n.device_id).cloned(),
+                            // Path view unavailable: keep the last reported mode.
+                            None => old.get(&n.device_id).and_then(|o| o.path_mode.clone()),
+                        };
+                        (n.device_id.clone(), n)
+                    })
+                    .collect::<BTreeMap<_, _>>();
+            }
+            ResourceData::AclRules(r) => st.acl_rules = r,
+            ResourceData::AclGroups(g) => st.acl_groups = g,
+            ResourceData::PendingAuth(p) => st.pending_auth = p,
+        }
+        drop(inner);
+        let _ = self.change_tx.send(StateChange::ResourceRefreshed(resource));
+        true
     }
 
-    /// Get a snapshot of the current state.
+    /// Set the sync state.
+    pub async fn set_sync(&self, sync: SyncState) {
+        let mut inner = self.inner.write().await;
+        if inner.state.sync == sync {
+            return;
+        }
+        inner.state.sync = sync.clone();
+        drop(inner);
+        let _ = self.change_tx.send(StateChange::SyncChanged(sync));
+    }
+
+    /// Apply a push event.  Returns the resources that must be re-queried
+    /// because the event does not carry the full new state.
+    pub async fn apply_event(&self, event: &IpcEvent) -> Vec<Resource> {
+        // Log lines are not state; they are fetched on demand (GetLogs).
+        if matches!(event, IpcEvent::Diagnostic { .. }) {
+            return Vec::new();
+        }
+
+        let mut inner = self.inner.write().await;
+        let (touched, refresh) = apply_event_to(&mut inner.state, event);
+        for r in touched {
+            *inner.epochs.entry(r).or_insert(0) += 1;
+        }
+        drop(inner);
+        let _ = self.change_tx.send(StateChange::EventApplied(event.clone()));
+        refresh
+    }
+
+    /// Get a copy of the current state.
     pub async fn snapshot(&self) -> SystemState {
-        self.inner.read().await.clone()
+        self.inner.read().await.state.clone()
     }
 
     /// Subscribe to state change notifications.
     pub fn subscribe(&self) -> broadcast::Receiver<StateChange> {
-        self.event_tx.subscribe()
+        self.change_tx.subscribe()
     }
 }
 
@@ -266,82 +246,216 @@ impl Default for StateStore {
     }
 }
 
+/// Apply `event` to `st`.  Returns (resources touched → epoch bump,
+/// resources to re-query).
+fn apply_event_to(st: &mut SystemState, event: &IpcEvent) -> (Vec<Resource>, Vec<Resource>) {
+    use Resource::*;
+    match event {
+        IpcEvent::AccessRequestCreated {
+            request_id,
+            src_device_id,
+            src_user_id,
+            src_device_display_name,
+            src_user_display_name,
+            proto,
+            dst_port,
+            service_name,
+        } => {
+            if !st.pending_auth.iter().any(|r| r.request_id == *request_id) {
+                st.pending_auth.push(PendingAuthRequest {
+                    request_id: request_id.clone(),
+                    src_device_id: src_device_id.clone(),
+                    src_user_id: src_user_id.clone(),
+                    src_device_display_name: src_device_display_name.clone(),
+                    src_user_display_name: src_user_display_name.clone(),
+                    proto: proto.clone(),
+                    dst_port: *dst_port,
+                    service_name: service_name.clone(),
+                    expires_in_secs: None,
+                    expires_at_ms: None,
+                });
+            }
+            // The event carries no deadline; Core's list does.
+            (vec![PendingAuth], vec![PendingAuth])
+        }
+        IpcEvent::AccessRequestTimeout { request_id } => {
+            st.pending_auth.retain(|r| r.request_id != *request_id);
+            (vec![PendingAuth], vec![])
+        }
+        IpcEvent::AccessAuthRequired { coordinator_url } => {
+            st.access_auth_required = Some(coordinator_url.clone());
+            (vec![], vec![Health])
+        }
+        IpcEvent::NodeAdded { device_id, ipv4, ipv6, hostname, display_name } => {
+            let node = st.nodes.entry(device_id.clone()).or_insert_with(|| NodeInfo {
+                device_id: device_id.clone(),
+                ipv4: None,
+                ipv6: None,
+                hostname: None,
+                display_name: None,
+                user_id: None,
+                user_handle: None,
+                device_handle: None,
+                is_authenticated: false,
+                path_mode: None,
+            });
+            node.ipv4 = Some(ipv4.clone());
+            node.ipv6 = Some(ipv6.clone());
+            node.hostname = hostname.clone();
+            node.display_name = display_name.clone();
+            // User/identity fields are only in GetNodes.
+            (vec![Nodes], vec![Nodes])
+        }
+        IpcEvent::NodeRemoved { device_id } => {
+            st.nodes.remove(device_id);
+            (vec![Nodes], vec![])
+        }
+        IpcEvent::NodeStateChanged { .. } => {
+            // `change` has no defined schema; re-query instead of guessing.
+            (vec![], vec![Nodes])
+        }
+        IpcEvent::PathChanged { device_id, new_mode, .. } => {
+            if let Some(node) = st.nodes.get_mut(device_id) {
+                node.path_mode = Some(new_mode.clone());
+            }
+            (vec![Nodes], vec![])
+        }
+        IpcEvent::AclChanged { rule_id, action } => {
+            if action == "deleted" {
+                st.acl_rules.retain(|r| r.id != *rule_id);
+            }
+            // Created/updated events don't carry the rule.
+            (vec![AclRules], vec![AclRules, Health])
+        }
+        IpcEvent::AclGroupChanged { group_id, action } => {
+            if action == "deleted" {
+                st.acl_groups.retain(|g| g.id != *group_id);
+            }
+            (vec![AclGroups], vec![AclGroups])
+        }
+        IpcEvent::RoomStateChanged { .. } => {
+            // The event's peer list lacks addresses and this device, and its
+            // relay is not populated; Core's room view is authoritative.
+            (vec![], vec![Room, Nodes])
+        }
+        IpcEvent::CoordinatorConnectionChanged { connected } => {
+            if let Some(h) = st.health.as_mut() {
+                h.ws_connected = Some(*connected);
+            }
+            (vec![Health], vec![Health])
+        }
+        IpcEvent::Diagnostic { .. } => (vec![], vec![]),
+    }
+}
+
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use msst_ipc_protocol::IpcEvent;
+    use serde_json::json;
 
-    #[tokio::test]
-    async fn apply_event_node_added() {
-        let store = StateStore::new();
-        store
-            .apply_event(&IpcEvent::NodeAdded {
-                device_id: "device-deadbeef".into(),
-                ipv4: "172.22.1.2".into(),
-                ipv6: "fd22::1".into(),
-                hostname: Some("test.ezplay.msst.net".into()),
-                display_name: Some("Test PC".into()),
-            })
-            .await;
+    // Payloads below mirror Core 3.1.x `src/ipc/handler.rs`, `rooms::room_view`,
+    // `acl::list_rules`/`rule_view`, `acl::list_groups`,
+    // `inbound::pending_requests` and `diagnostics::path_view`.
 
-        let state = store.snapshot().await;
-        assert_eq!(state.nodes.len(), 1);
-        let node = state.nodes.get("device-deadbeef").unwrap();
-        assert_eq!(node.ipv4, "172.22.1.2");
-        assert_eq!(node.hostname.as_deref().unwrap(), "test.ezplay.msst.net");
+    fn core_health() -> Value {
+        json!({
+            "status": "ok", "generation": 7,
+            "device_id": "device-aabbccdd", "user_id": "usr-11223344",
+            "device_handle": "pc", "user_handle": "alice",
+            "user_display_name": "Alice", "device_display_name": "Alice PC",
+            "device_hostname": "pc.alice.ezplay.msst.net",
+            "is_authenticated": true, "auth_expires_at": 1_900_000_000i64,
+            "ws_connected": true, "coordinator_state": "Connected", "tun_ready": true,
+            "relay": "1.2.3.4:3478", "peer_count": 1, "rule_count": 1, "ping_enabled": false,
+            "local_device_id": "device-aabbccdd", "local_user_id": "usr-11223344"
+        })
+    }
+
+    fn core_rules() -> Value {
+        json!({ "rules": [{
+            "id": "r1",
+            "permission_group": { "kind": "devices", "ids": ["device-00000001"] },
+            "protocol_ports": [{ "proto": "tcp", "start": 25565, "end": 25565 }],
+            "action": "allow", "direction": "inbound", "expires_at": null,
+            "enabled": true, "comment": "mc",
+            "principal_mnemonics": {}, "pending_migration": false
+        }]})
     }
 
     #[tokio::test]
-    async fn apply_event_node_removed() {
+    async fn from_core_responses() {
         let store = StateStore::new();
-        store
-            .apply_event(&IpcEvent::NodeAdded {
-                device_id: "device-deadbeef".into(),
-                ipv4: "172.22.1.2".into(),
-                ipv6: "fd22::1".into(),
-                hostname: None,
-                display_name: None,
-            })
-            .await;
-        store
-            .apply_event(&IpcEvent::NodeRemoved {
-                device_id: "device-deadbeef".into(),
-            })
-            .await;
+        assert!(store.apply_resource(0, ResourceData::health(&core_health()).unwrap()).await);
+        let room = json!({
+            "room_id": "space-1", "room_name": "game", "relay": "1.2.3.4:3478",
+            "peers": [{ "device_id": "device-00000001", "ipv4": "172.22.0.1", "ipv6": "fd22::1",
+                        "hostname": null, "display_name": "Bob" }],
+            "device_id": "device-aabbccdd", "user_id": "usr-11223344",
+            "joined_rooms": { "space-1": "game" }, "rule_count": 1, "generation": 7
+        });
+        assert!(store.apply_resource(0, ResourceData::room(&room).unwrap()).await);
+        let nodes = json!({ "nodes": [{
+            "device_id": "device-00000001", "ipv4": "172.22.0.1", "ipv6": "fd22::1",
+            "hostname": null, "display_name": "Bob", "user_id": null,
+            "user_handle": null, "device_handle": null, "is_authenticated": false
+        }]});
+        let paths = json!({ "peers": [{ "device_id": "device-00000001", "display_name": "Bob",
+                                        "chosen": "relay", "candidates": [] }]});
+        assert!(store.apply_resource(0, ResourceData::nodes(&nodes, Some(&paths)).unwrap()).await);
+        assert!(store.apply_resource(0, ResourceData::acl_rules(&core_rules()).unwrap()).await);
+        let groups = json!({ "groups": [{ "id": "g1", "name": "friends", "kind": "user", "member_ids": ["usr-1"] }]});
+        assert!(store.apply_resource(0, ResourceData::acl_groups(&groups).unwrap()).await);
+        let pending = json!({ "requests": [{
+            "request_id": "a1", "src_device_id": "device-00000001", "src_user_id": null,
+            "src_device_display_name": "Bob", "src_user_display_name": null,
+            "proto": "tcp", "dst_port": 25565, "service_name": "Minecraft Java", "expires_in_secs": 30
+        }]});
+        assert!(store.apply_resource(0, ResourceData::pending_auth(&pending, 1_000).unwrap()).await);
 
-        let state = store.snapshot().await;
-        assert!(state.nodes.is_empty());
+        let s = store.snapshot().await;
+        let h = s.health.unwrap();
+        assert!(h.is_authenticated);
+        assert_eq!(h.ping_enabled, Some(false));
+        assert_eq!(s.room.room_id.as_deref(), Some("space-1"));
+        assert_eq!(s.room.peers[0].ipv4.as_deref(), Some("172.22.0.1"));
+        assert_eq!(s.nodes["device-00000001"].path_mode.as_deref(), Some("relay"));
+        assert_eq!(s.acl_rules[0].id, "r1");
+        // Unknown rule fields are carried through unchanged.
+        assert_eq!(s.acl_rules[0].fields["permission_group"]["kind"], "devices");
+        assert_eq!(s.acl_groups[0].member_ids, vec!["usr-1"]);
+        assert_eq!(s.pending_auth[0].expires_at_ms, Some(31_000));
+    }
+
+    #[test]
+    fn malformed_response_is_an_error() {
+        assert!(ResourceData::acl_rules(&json!({ "nope": [] })).is_err());
+        assert!(ResourceData::acl_rules(&json!({ "rules": [{ "no_id": 1 }] })).is_err());
+        assert!(ResourceData::nodes(&json!({ "nodes": [{}] }), None).is_err());
     }
 
     #[tokio::test]
-    async fn apply_event_access_request() {
+    async fn stale_query_result_is_rejected() {
         let store = StateStore::new();
-        store
-            .apply_event(&IpcEvent::AccessRequestCreated {
-                request_id: "req-001".into(),
-                src_device_id: "device-aabb".into(),
-                src_user_id: Some("usr-1122".into()),
-                src_device_display_name: Some("Alice PC".into()),
-                src_user_display_name: Some("Alice".into()),
-                proto: "tcp".into(),
-                dst_port: 25565,
-                service_name: Some("minecraft-java".into()),
-            })
-            .await;
-
-        let state = store.snapshot().await;
-        assert_eq!(state.pending_auth.len(), 1);
-        assert_eq!(state.pending_auth[0].request_id, "req-001");
+        let epoch = store.epoch(Resource::PendingAuth).await;
+        // Event arrives while the query is in flight.
+        store.apply_event(&IpcEvent::AccessRequestTimeout { request_id: "a1".into() }).await;
+        let stale = ResourceData::pending_auth(
+            &json!({ "requests": [{ "request_id": "a1", "src_device_id": "d", "proto": "tcp", "dst_port": 1 }] }),
+            0,
+        )
+        .unwrap();
+        assert!(!store.apply_resource(epoch, stale).await);
+        assert!(store.snapshot().await.pending_auth.is_empty());
     }
 
     #[tokio::test]
-    async fn apply_event_access_request_dedup() {
+    async fn access_request_dedup_and_requery() {
         let store = StateStore::new();
-        let event = IpcEvent::AccessRequestCreated {
-            request_id: "req-001".into(),
-            src_device_id: "device-aabb".into(),
+        let ev = IpcEvent::AccessRequestCreated {
+            request_id: "a1".into(),
+            src_device_id: "d".into(),
             src_user_id: None,
             src_device_display_name: None,
             src_user_display_name: None,
@@ -349,102 +463,58 @@ mod tests {
             dst_port: 25565,
             service_name: None,
         };
-        store.apply_event(&event).await;
-        store.apply_event(&event).await; // duplicate
-
-        let state = store.snapshot().await;
-        assert_eq!(state.pending_auth.len(), 1);
+        assert_eq!(store.apply_event(&ev).await, vec![Resource::PendingAuth]);
+        store.apply_event(&ev).await;
+        let s = store.snapshot().await;
+        assert_eq!(s.pending_auth.len(), 1);
+        assert_eq!(s.pending_auth[0].expires_at_ms, None, "no invented deadline");
     }
 
     #[tokio::test]
-    async fn apply_event_access_request_timeout() {
+    async fn acl_events_trigger_requery() {
         let store = StateStore::new();
-        store
-            .apply_event(&IpcEvent::AccessRequestCreated {
-                request_id: "req-001".into(),
-                src_device_id: "device-aabb".into(),
-                src_user_id: None,
-                src_device_display_name: None,
-                src_user_display_name: None,
-                proto: "tcp".into(),
-                dst_port: 25565,
-                service_name: None,
-            })
-            .await;
-        store
-            .apply_event(&IpcEvent::AccessRequestTimeout {
-                request_id: "req-001".into(),
-            })
-            .await;
-
-        let state = store.snapshot().await;
-        assert!(state.pending_auth.is_empty());
+        store.apply_resource(0, ResourceData::acl_rules(&core_rules()).unwrap()).await;
+        let refresh = store.apply_event(&IpcEvent::AclChanged { rule_id: "r1".into(), action: "updated".into() }).await;
+        assert!(refresh.contains(&Resource::AclRules));
+        store.apply_event(&IpcEvent::AclChanged { rule_id: "r1".into(), action: "deleted".into() }).await;
+        assert!(store.snapshot().await.acl_rules.is_empty());
     }
 
     #[tokio::test]
-    async fn apply_event_room_state_changed() {
-        let store = StateStore::new();
-        store
-            .apply_event(&IpcEvent::RoomStateChanged {
-                room_id: Some("room-abc".into()),
-                room_name: Some("Test Room".into()),
-                peers: vec![serde_json::json!({
-                    "device_id": "device-deadbeef",
-                    "hostname": "test.ezplay.msst.net",
-                    "display_name": "Test PC"
-                })],
-                relay: Some("relay.example.com:3478".into()),
-            })
-            .await;
-
-        let state = store.snapshot().await;
-        assert_eq!(state.room.room_id.as_deref().unwrap(), "room-abc");
-        assert_eq!(state.room.peers.len(), 1);
-    }
-
-    #[tokio::test]
-    async fn apply_snapshot_replaces_state() {
+    async fn node_lifecycle_and_path() {
         let store = StateStore::new();
         store
             .apply_event(&IpcEvent::NodeAdded {
-                device_id: "old-node".into(),
-                ipv4: "172.22.1.1".into(),
-                ipv6: "fd22::1".into(),
+                device_id: "d1".into(),
+                ipv4: "172.22.0.2".into(),
+                ipv6: "fd22::2".into(),
                 hostname: None,
-                display_name: None,
+                display_name: Some("D1".into()),
             })
             .await;
-
-        let snapshot = serde_json::json!({
-            "health": {"status": "ok", "is_authenticated": true},
-            "nodes": [
-                {"device_id": "new-node", "ipv4": "172.22.1.2", "ipv6": "fd22::2"}
-            ]
-        });
-        store.apply_snapshot(&snapshot).await;
-
-        let state = store.snapshot().await;
-        assert!(!state.nodes.contains_key("old-node"));
-        assert!(state.nodes.contains_key("new-node"));
-        assert_eq!(state.health.status, "ok");
+        store.apply_event(&IpcEvent::PathChanged { device_id: "d1".into(), old_mode: "relay".into(), new_mode: "direct".into() }).await;
+        assert_eq!(store.snapshot().await.nodes["d1"].path_mode.as_deref(), Some("direct"));
+        store.apply_event(&IpcEvent::NodeRemoved { device_id: "d1".into() }).await;
+        assert!(store.snapshot().await.nodes.is_empty());
     }
 
     #[tokio::test]
-    async fn subscribe_receives_events() {
+    async fn auth_required_cleared_by_authenticated_health() {
+        let store = StateStore::new();
+        store.apply_event(&IpcEvent::AccessAuthRequired { coordinator_url: "https://c".into() }).await;
+        assert!(store.snapshot().await.access_auth_required.is_some());
+        let epoch = store.epoch(Resource::Health).await;
+        store.apply_resource(epoch, ResourceData::health(&core_health()).unwrap()).await;
+        assert!(store.snapshot().await.access_auth_required.is_none());
+    }
+
+    #[tokio::test]
+    async fn diagnostic_events_do_not_notify() {
         let store = StateStore::new();
         let mut rx = store.subscribe();
-
         store
-            .apply_event(&IpcEvent::NodeAdded {
-                device_id: "device-test".into(),
-                ipv4: "172.22.1.1".into(),
-                ipv6: "fd22::1".into(),
-                hostname: None,
-                display_name: None,
-            })
+            .apply_event(&IpcEvent::Diagnostic { level: "info".into(), target: "t".into(), message: "m".into(), timestamp_ms: 0 })
             .await;
-
-        let change = rx.recv().await.unwrap();
-        assert!(matches!(change, StateChange::EventApplied(IpcEvent::NodeAdded { .. })));
+        assert!(rx.try_recv().is_err());
     }
 }

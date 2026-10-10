@@ -6,6 +6,8 @@
 pub mod app;
 pub mod error;
 pub mod ipc;
+pub mod notify;
+pub mod ops;
 pub mod state;
 
 #[cfg(feature = "tauri")]

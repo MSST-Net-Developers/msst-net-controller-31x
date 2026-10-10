@@ -42,6 +42,13 @@ prevents hung connections.
 
 ### Status: PROPOSED (requires Core team approval)
 
+> **Superseded (3.1.0-alpha.1 Controller fixes):** protocol 0.2 was used for
+> `GetServices`, so this proposal must target 0.3 — see
+> `docs/PROTOCOL_PROPOSALS_3.1.md` P5.  The Controller no longer contains a
+> `SequenceTracker` or assumes any seq capability; it resyncs every resource
+> after each reconnect instead.  The "Already implemented" notes below are
+> obsolete.
+
 ## Background
 
 The current IPC protocol (v0.1.0) does not include sequence numbers on events.

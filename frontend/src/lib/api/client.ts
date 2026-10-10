@@ -1,272 +1,187 @@
-// API client — works in both browser (HTTP/WS) and Tauri (invoke) modes.
+// Transport to the Controller backend.
 //
-// In browser mode: uses fetch() to the WebUI backend + WebSocket for events.
-// In Tauri mode: uses invoke() to the Rust commands.
+// - Desktop (Tauri): `invoke` commands of the Rust shell + the
+//   `controller-changed` event.
+// - Browser (WebUI): same-origin HTTPS API with a session cookie + the
+//   `/ws/events` WebSocket.
+//
+// Both expose the same three operations: read the view, send an
+// `IpcRequest`, and get notified when the view changed.
 
-declare const __API_BASE_URL__: string;
+import type { ClearRulesResult, ControllerView, UiNotice } from '$lib/types';
+import type { IpcRequest } from './requests';
 
-const BASE_URL = typeof __API_BASE_URL__ !== "undefined" ? __API_BASE_URL__ : "http://localhost:18080";
+export const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
-// ── HTTP helpers ─────────────────────────────────────────────────────────────
-
-async function apiGet<T>(path: string): Promise<T> {
-  const resp = await fetch(`${BASE_URL}${path}`, { credentials: "include" });
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`${resp.status}: ${text}`);
-  }
-  return resp.json();
-}
-
-async function apiPost<T>(path: string, body?: unknown): Promise<T> {
-  const resp = await fetch(`${BASE_URL}${path}`, {
-    method: "POST",
-    credentials: "include",
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`${resp.status}: ${text}`);
-  }
-  return resp.json();
-}
-
-async function apiPut<T>(path: string, body: unknown): Promise<T> {
-  const resp = await fetch(`${BASE_URL}${path}`, {
-    method: "PUT",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`${resp.status}: ${text}`);
-  }
-  return resp.json();
-}
-
-async function apiDelete(path: string): Promise<void> {
-  const resp = await fetch(`${BASE_URL}${path}`, {
-    method: "DELETE",
-    credentials: "include",
-  });
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`${resp.status}: ${text}`);
+/** An error from the Controller or Core, with a user-facing message. */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public category: string,
+    public code: string,
+  ) {
+    super(message);
   }
 }
 
-// ── Tauri detection ──────────────────────────────────────────────────────────
+function toApiError(e: unknown): ApiError {
+  if (e instanceof ApiError) return e;
+  if (e && typeof e === 'object' && 'message' in e && 'code' in e) {
+    const u = e as { message: string; category?: string; code: string };
+    return new ApiError(u.message, u.category ?? 'core', u.code);
+  }
+  return new ApiError(String(e), 'unknown', 'unknown');
+}
 
-let tauriInvoke: ((cmd: string, args?: Record<string, unknown>) => Promise<unknown>) | null = null;
+/** User-facing message for any thrown value. */
+export function errorMessage(e: unknown): string {
+  return toApiError(e).message;
+}
 
-async function getTauriInvoke() {
-  if (tauriInvoke !== null) return tauriInvoke;
+// ── Tauri ────────────────────────────────────────────────────────────────────
+
+async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  const { invoke } = await import('@tauri-apps/api/core');
   try {
-    const mod = await import("@tauri-apps/api/core");
-    tauriInvoke = mod.invoke;
-    return tauriInvoke;
-  } catch {
-    tauriInvoke = undefined as unknown as null;
-    return null;
+    return await invoke<T>(cmd, args);
+  } catch (e) {
+    throw toApiError(e);
   }
 }
 
-// ── Public API ───────────────────────────────────────────────────────────────
+// ── WebUI ────────────────────────────────────────────────────────────────────
 
-import type {
-  SystemState,
-  HealthState,
-  NodeInfo,
-  RoomState,
-  AclRule,
-  AclGroup,
-  PendingAuthRequest,
-  ConnectionStatus,
-} from "$lib/types";
+let onUnauthorized: (() => void) | null = null;
 
-export const api = {
-  // State queries
-  async getSystemState(): Promise<SystemState> {
-    return apiGet("/api/state");
-  },
+/** Called when the WebUI session is missing or expired. */
+export function setUnauthorizedHandler(f: () => void) {
+  onUnauthorized = f;
+}
 
-  async getHealth(): Promise<HealthState> {
-    return apiGet("/api/health");
-  },
+async function http<T>(method: string, path: string, body?: unknown): Promise<T> {
+  let resp: Response;
+  try {
+    resp = await fetch(path, {
+      method,
+      credentials: 'same-origin',
+      headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw new ApiError('无法连接到 WebUI 服务，请检查网络。', 'connection', 'webui_unreachable');
+  }
+  if (resp.status === 401 && resp.headers.get('X-Webui-Unauthorized')) {
+    onUnauthorized?.();
+    throw new ApiError('登录已失效，请重新登录。', 'session', 'unauthorized');
+  }
+  const text = await resp.text();
+  let data: unknown = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    /* non-JSON body */
+  }
+  if (!resp.ok) {
+    if (data && typeof data === 'object' && 'message' in data) throw toApiError(data);
+    const msg = data && typeof data === 'object' && 'error' in data ? String((data as { error: unknown }).error) : text;
+    throw new ApiError(msg || `HTTP ${resp.status}`, 'http', String(resp.status));
+  }
+  return data as T;
+}
 
-  async getNodes(): Promise<NodeInfo[]> {
-    return apiGet("/api/nodes");
-  },
-
-  async getRoom(): Promise<RoomState> {
-    return apiGet("/api/room");
-  },
-
-  async getAclRules(): Promise<{ rules: AclRule[] }> {
-    return apiGet("/api/acl/rules");
-  },
-
-  async getAclGroups(): Promise<{ groups: AclGroup[] }> {
-    return apiGet("/api/acl/groups");
-  },
-
-  async getPendingAuth(): Promise<{ requests: PendingAuthRequest[] }> {
-    return apiGet("/api/auth/pending");
-  },
-
-  async getConnectionStatus(): Promise<{ status: ConnectionStatus }> {
-    return apiGet("/api/connection");
-  },
-
-  // Commands
-  async createRoom(room_name: string, password?: string): Promise<unknown> {
-    return apiPost("/api/room/create", { room_name, password: password || null });
-  },
-
-  async joinRoom(room_id: string, password?: string): Promise<unknown> {
-    return apiPost("/api/room/join", { room_id, password: password || null });
-  },
-
-  async leaveRoom(room_id: string): Promise<unknown> {
-    return apiPost("/api/room/leave", { room_id });
-  },
-
-  async createAclRule(rule: unknown): Promise<unknown> {
-    return apiPost("/api/acl/rules", rule);
-  },
-
-  async updateAclRule(rule_id: string, patch: unknown): Promise<unknown> {
-    return apiPost(`/api/acl/rules/${rule_id}`, patch);
-  },
-
-  async deleteAclRule(rule_id: string): Promise<void> {
-    return apiDelete(`/api/acl/rules/${rule_id}`);
-  },
-
-  async clearAclRules(): Promise<void> {
-    return apiDelete("/api/acl/rules");
-  },
-
-  async getAccessLog(): Promise<unknown> {
-    return apiGet("/api/acl/access-log");
-  },
-
-  async createAclGroup(group: unknown): Promise<unknown> {
-    return apiPost("/api/acl/groups", group);
-  },
-
-  async updateAclGroup(group_id: string, patch: unknown): Promise<unknown> {
-    return apiPost(`/api/acl/groups/${group_id}`, patch);
-  },
-
-  async deleteAclGroup(group_id: string): Promise<void> {
-    return apiDelete(`/api/acl/groups/${group_id}`);
-  },
-
-  async submitAuthDecision(request_id: string, decision: string): Promise<unknown> {
-    return apiPost("/api/auth/decision", { request_id, decision });
-  },
-
-  async getNetSettings(): Promise<unknown> {
-    return apiGet("/api/net/settings");
-  },
-
-  async setNetSettings(settings: unknown): Promise<unknown> {
-    return apiPut("/api/net/settings", settings);
-  },
-
-  async getPathView(): Promise<unknown> {
-    return apiGet("/api/net/path-view");
-  },
-
-  async getTrafficStats(): Promise<unknown> {
-    return apiGet("/api/net/traffic");
-  },
-
-  async getEndpoints(): Promise<unknown> {
-    return apiGet("/api/net/endpoints");
-  },
-
-  async getRelays(): Promise<unknown> {
-    return apiGet("/api/relays");
-  },
-
-  async getPing(): Promise<unknown> {
-    return apiGet("/api/ping");
-  },
-
-  async setPingEnabled(enabled: boolean): Promise<unknown> {
-    return apiPost("/api/ping", { enabled });
-  },
-
-  async startDiagPing(device_id: string): Promise<unknown> {
-    return apiPost("/api/net/ping-peer", { device_id });
-  },
-
-  async getDiagPingResult(job_id: string): Promise<unknown> {
-    return apiGet(`/api/net/ping-peer/${job_id}`);
-  },
-
-  async updateDisplayName(user: string, device: string): Promise<unknown> {
-    return apiPost("/api/identity/display-name", { user, device });
-  },
-
-  async updateHandle(user: string, device: string): Promise<unknown> {
-    return apiPost("/api/identity/handle", { user, device });
-  },
-
-  async reRegister(): Promise<unknown> {
-    return apiPost("/api/re-register");
-  },
-
-  async getLogs(): Promise<unknown> {
-    return apiGet("/api/logs");
-  },
-
-  async clearLogs(): Promise<void> {
-    return apiDelete("/api/logs");
-  },
+export const webui = {
+  session: () => http<{ authenticated: boolean }>('GET', '/api/session'),
+  login: (password: string) => http<{ ok: boolean }>('POST', '/api/login', { password }),
+  logout: () => http<{ ok: boolean }>('POST', '/api/logout', {}),
+  info: () => http<{ version: string; codename: string; core_protocol: string | null }>('GET', '/api/info'),
+  getConfig: () => http<{ port: number; allowed_cidrs: string[] }>('GET', '/api/config'),
+  setConfig: (allowed_cidrs: string[]) => http<{ ok: boolean }>('PUT', '/api/config', { allowed_cidrs }),
 };
 
-// ── WebSocket connection ─────────────────────────────────────────────────────
+// ── Common API ───────────────────────────────────────────────────────────────
 
-export type WsMessageHandler = (data: unknown) => void;
+export function getView(): Promise<ControllerView> {
+  return isTauri ? invoke('get_view') : http('GET', '/api/view');
+}
 
-export function connectWs(onMessage: WsMessageHandler): () => void {
-  const wsUrl = BASE_URL.replace(/^http/, "ws") + "/ws/events";
-  let ws: WebSocket | null = null;
-  let closed = false;
-  let reconnectTimer: ReturnType<typeof setTimeout>;
+/** Send a request to Core.  Success of a command means Core accepted it. */
+export function ipc<T = unknown>(request: IpcRequest): Promise<T> {
+  return isTauri ? invoke('ipc_request', { request }) : http('POST', '/api/ipc', request);
+}
 
-  function connect() {
-    if (closed) return;
-    ws = new WebSocket(wsUrl);
+export function clearAclRules(): Promise<ClearRulesResult> {
+  return isTauri ? invoke('clear_acl_rules') : http('POST', '/api/acl/clear', {});
+}
 
-    ws.onmessage = (evt) => {
-      try {
-        const data = JSON.parse(evt.data);
-        onMessage(data);
-      } catch {}
-    };
+/** Save log text: native save dialog on desktop, download in the browser.
+ *  Returns false if the user cancelled. */
+export async function exportLogs(content: string): Promise<boolean> {
+  if (isTauri) return invoke<boolean>('export_logs', { content });
+  const url = URL.createObjectURL(new Blob([content], { type: 'text/plain' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'msst-net-logs.txt';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return true;
+}
 
-    ws.onclose = () => {
-      if (!closed) {
-        reconnectTimer = setTimeout(connect, 3000);
-      }
-    };
+/** Open a URL in the system browser (desktop) or a new tab (browser). */
+export async function openExternal(url: string) {
+  if (isTauri) {
+    const { openUrl } = await import('@tauri-apps/plugin-opener');
+    await openUrl(url);
+  } else {
+    window.open(url, '_blank', 'noopener');
+  }
+}
 
-    ws.onerror = () => {
-      ws?.close();
+/** Subscribe to change notifications.  Returns an unsubscribe function. */
+export function onNotice(cb: (n: UiNotice) => void): () => void {
+  if (isTauri) {
+    let unlisten: (() => void) | null = null;
+    let closed = false;
+    import('@tauri-apps/api/event').then(({ listen }) =>
+      listen('controller-changed', () => cb({ type: 'changed' })).then((u) => {
+        if (closed) u();
+        else unlisten = u;
+      }),
+    );
+    return () => {
+      closed = true;
+      unlisten?.();
     };
   }
 
+  let ws: WebSocket | null = null;
+  let closed = false;
+  let retry: ReturnType<typeof setTimeout>;
+  let delay = 1000;
+  const connect = () => {
+    if (closed) return;
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(`${proto}//${location.host}/ws/events`);
+    ws.onopen = () => {
+      delay = 1000;
+      cb({ type: 'changed' }); // may have missed changes while disconnected
+    };
+    ws.onmessage = (e) => {
+      try {
+        cb(JSON.parse(e.data) as UiNotice);
+      } catch {
+        /* ignore malformed */
+      }
+    };
+    ws.onclose = () => {
+      if (closed) return;
+      retry = setTimeout(connect, delay);
+      delay = Math.min(delay * 2, 15000);
+    };
+  };
   connect();
-
   return () => {
     closed = true;
-    clearTimeout(reconnectTimer);
+    clearTimeout(retry);
     ws?.close();
   };
 }

@@ -1,431 +1,257 @@
-//! Integration tests for the full IPC flow.
-//!
-//! These tests exercise the complete path: state store event application,
-//! snapshot management, mock transport request/response correlation,
-//! and subscription delivery.
+//! End-to-end tests: IpcClient ↔ FakeCore over the real wire protocol
+//! (handshake + framing), with Core 3.1.x-shaped responses.
 
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use msst_ipc_protocol::{IpcEvent, IpcMessage, IpcRequest, IpcResponse};
-use msst_net_controller::ipc::mock;
-use msst_net_controller::state::{StateChange, StateStore};
+use msst_ipc_protocol::{AuthDecision, IpcError, IpcEvent, IpcRequest};
+use msst_net_controller::error::ControllerError;
+use msst_net_controller::ipc::client::{IpcClient, IpcClientConfig};
+use msst_net_controller::ipc::mock::{FakeCore, default_responses};
+use msst_net_controller::state::{ConnectionStatus, StateStore, SyncState};
+use serde_json::json;
 
-// ── Tests ────────────────────────────────────────────────────────────────────
+fn fast_config() -> IpcClientConfig {
+    IpcClientConfig {
+        reconnect_base_ms: 20,
+        reconnect_max_ms: 100,
+        incompatible_retry_ms: 50,
+        request_timeout: Duration::from_secs(2),
+        poll_interval: Duration::from_secs(60),
+    }
+}
+
+async fn wait_for<F, Fut>(what: &str, mut cond: F)
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = bool>,
+{
+    for _ in 0..300 {
+        if cond().await {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("timed out waiting for: {what}");
+}
+
+fn start(core: &FakeCore) -> IpcClient {
+    IpcClient::with_connector(fast_config(), StateStore::new(), core.connector())
+}
+
+async fn synced(client: &IpcClient) {
+    let c = client.clone();
+    wait_for("sync", move || {
+        let c = c.clone();
+        async move { c.state_store().snapshot().await.sync == SyncState::Synced }
+    })
+    .await;
+}
 
 #[tokio::test]
-async fn full_flow_snapshot_then_events() {
-    let store = StateStore::new();
-
-    // 1. Apply a snapshot (as if received from GetSystemState)
-    let snapshot = serde_json::json!({
-        "health": {
-            "status": "ok",
-            "is_authenticated": true,
-            "user_id": "usr-test",
-            "device_id": "device-test"
-        },
-        "nodes": [
-            {
-                "device_id": "device-peer1",
-                "ipv4": "172.22.1.2",
-                "ipv6": "fd22::2",
-                "hostname": "peer1.ezplay.msst.net",
-                "display_name": "Peer One"
-            }
-        ],
-        "room": {"room_id": null, "room_name": null, "relay": null, "peers": []},
-        "acl_rules": [],
-        "acl_groups": [],
-        "pending_auth": []
+async fn connect_syncs_every_resource_from_core() {
+    let core = FakeCore::new(|req| match req {
+        IpcRequest::Health => Ok(json!({ "status": "ok", "device_id": "device-aabbccdd", "is_authenticated": true, "ping_enabled": true })),
+        IpcRequest::GetSystemState => Ok(json!({
+            "room_id": "space-1", "room_name": "game", "relay": "1.2.3.4:3478",
+            "peers": [{ "device_id": "device-00000001", "ipv4": "172.22.0.1", "ipv6": "fd22::1", "hostname": null, "display_name": "Bob" }],
+            "device_id": "device-aabbccdd", "user_id": null, "joined_rooms": {}, "rule_count": 1, "generation": 3
+        })),
+        IpcRequest::GetNodes => Ok(json!({ "nodes": [{ "device_id": "device-00000001", "ipv4": "172.22.0.1", "ipv6": "fd22::1", "is_authenticated": false }] })),
+        IpcRequest::GetPathView => Ok(json!({ "peers": [{ "device_id": "device-00000001", "chosen": "relay", "candidates": [] }] })),
+        IpcRequest::GetAclRules => Ok(json!({ "rules": [{ "id": "r1", "action": "allow", "enabled": true }] })),
+        IpcRequest::GetAclGroups => Ok(json!({ "groups": [{ "id": "g1", "name": "friends", "kind": "user", "member_ids": [] }] })),
+        IpcRequest::GetPendingAuth => Ok(json!({ "requests": [] })),
+        other => default_responses(other),
     });
-    store.apply_snapshot(&snapshot).await;
+    let client = start(&core);
+    synced(&client).await;
 
-    let state = store.snapshot().await;
-    assert_eq!(state.health.status, "ok");
-    assert!(state.health.is_authenticated);
-    assert_eq!(state.health.user_id.as_deref(), Some("usr-test"));
-    assert_eq!(state.nodes.len(), 1);
-    assert!(state.nodes.contains_key("device-peer1"));
-    assert!(state.room.room_id.is_none());
-
-    // 2. Apply incremental events (as if received from the event stream)
-    store.apply_event(&IpcEvent::NodeAdded {
-        device_id: "device-new".into(),
-        ipv4: "172.22.1.3".into(),
-        ipv6: "fd22::3".into(),
-        hostname: Some("new.ezplay.msst.net".into()),
-        display_name: Some("New Device".into()),
-    }).await;
-
-    store.apply_event(&IpcEvent::RoomStateChanged {
-        room_id: Some("room-test".into()),
-        room_name: Some("Test Room".into()),
-        peers: vec![serde_json::json!({
-            "device_id": "device-peer1",
-            "hostname": "peer1.ezplay.msst.net",
-            "display_name": "Peer One"
-        })],
-        relay: Some("relay.example.com:3478".into()),
-    }).await;
-
-    let state = store.snapshot().await;
-    assert_eq!(state.nodes.len(), 2);
-    assert!(state.nodes.contains_key("device-new"));
-    assert_eq!(state.room.room_id.as_deref(), Some("room-test"));
-    assert_eq!(state.room.peers.len(), 1);
-    assert_eq!(state.room.relay.as_deref(), Some("relay.example.com:3478"));
-
-    // 3. Verify health persisted through event application
-    assert_eq!(state.health.status, "ok");
-    assert!(state.health.is_authenticated);
+    let view = client.view().await;
+    assert_eq!(view.connection, ConnectionStatus::Connected);
+    let s = view.state;
+    assert_eq!(s.health.unwrap().device_id.as_deref(), Some("device-aabbccdd"));
+    assert_eq!(s.room.room_id.as_deref(), Some("space-1"));
+    assert_eq!(s.nodes["device-00000001"].path_mode.as_deref(), Some("relay"));
+    assert_eq!(s.acl_rules.len(), 1);
+    assert_eq!(s.acl_groups.len(), 1);
+    client.shutdown();
 }
 
 #[tokio::test]
-async fn state_store_auth_request_lifecycle() {
-    let store = StateStore::new();
+async fn log_events_during_sync_do_not_break_it() {
+    let core = FakeCore::new(default_responses);
+    // Core streams log lines from the moment the handshake completes.
+    let pusher = core.clone();
+    let spam = tokio::spawn(async move {
+        loop {
+            pusher.push_event(IpcEvent::Diagnostic { level: "info".into(), target: "t".into(), message: "x".into(), timestamp_ms: 0 });
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    });
+    let client = start(&core);
+    synced(&client).await;
+    spam.abort();
+    client.shutdown();
+}
 
-    // 1. Auth request arrives
-    store.apply_event(&IpcEvent::AccessRequestCreated {
-        request_id: "auth-001".into(),
-        src_device_id: "device-alice".into(),
-        src_user_id: Some("usr-alice".into()),
-        src_device_display_name: Some("Alice's PC".into()),
-        src_user_display_name: Some("Alice".into()),
-        proto: "tcp".into(),
-        dst_port: 25565,
-        service_name: Some("minecraft-java".into()),
-    }).await;
+#[tokio::test]
+async fn acl_event_triggers_requery() {
+    let rules = Arc::new(Mutex::new(json!({ "rules": [] })));
+    let r = rules.clone();
+    let core = FakeCore::new(move |req| match req {
+        IpcRequest::GetAclRules => Ok(r.lock().unwrap().clone()),
+        other => default_responses(other),
+    });
+    let client = start(&core);
+    synced(&client).await;
 
-    let state = store.snapshot().await;
-    assert_eq!(state.pending_auth.len(), 1);
-    assert_eq!(state.pending_auth[0].request_id, "auth-001");
-    assert_eq!(state.pending_auth[0].service_name.as_deref(), Some("minecraft-java"));
+    *rules.lock().unwrap() = json!({ "rules": [{ "id": "new-rule", "enabled": true }] });
+    core.push_event(IpcEvent::AclChanged { rule_id: "new-rule".into(), action: "created".into() });
 
-    // 2. Duplicate is ignored
-    store.apply_event(&IpcEvent::AccessRequestCreated {
-        request_id: "auth-001".into(),
-        src_device_id: "device-alice".into(),
+    let c = client.clone();
+    wait_for("rule appears", move || {
+        let c = c.clone();
+        async move { c.state_store().snapshot().await.acl_rules.iter().any(|r| r.id == "new-rule") }
+    })
+    .await;
+    client.shutdown();
+}
+
+#[tokio::test]
+async fn core_restart_resyncs() {
+    let room = Arc::new(Mutex::new(json!({ "room_id": null, "peers": [] })));
+    let r = room.clone();
+    let core = FakeCore::new(move |req| match req {
+        IpcRequest::GetSystemState => Ok(r.lock().unwrap().clone()),
+        other => default_responses(other),
+    });
+    let client = start(&core);
+    synced(&client).await;
+
+    // Core restarts with different state; no events were seen for it.
+    *room.lock().unwrap() = json!({ "room_id": "space-9", "room_name": "after", "peers": [] });
+    core.drop_connections();
+
+    let c = client.clone();
+    wait_for("resync after restart", move || {
+        let c = c.clone();
+        async move {
+            let s = c.state_store().snapshot().await;
+            s.sync == SyncState::Synced && s.room.room_id.as_deref() == Some("space-9")
+        }
+    })
+    .await;
+    assert!(client.connection_diagnostics().await.disconnections >= 1);
+    client.shutdown();
+}
+
+#[tokio::test]
+async fn commands_are_not_replayed_after_reconnect() {
+    let core = FakeCore::new(default_responses);
+    let client = start(&core);
+    synced(&client).await;
+
+    core.set_running(false);
+    let c = client.clone();
+    wait_for("disconnected", move || {
+        let c = c.clone();
+        async move { c.connection_status().await != ConnectionStatus::Connected }
+    })
+    .await;
+
+    let r = client.command(IpcRequest::DeleteAclRule { rule_id: "r1".into() }).await;
+    assert!(matches!(r, Err(ControllerError::NotConnected { .. })), "got {r:?}");
+
+    core.clear_requests();
+    core.set_running(true);
+    synced(&client).await;
+    assert!(
+        !core.requests().iter().any(|q| matches!(q, IpcRequest::DeleteAclRule { .. })),
+        "a command issued while disconnected must never reach Core later"
+    );
+    client.shutdown();
+}
+
+#[tokio::test]
+async fn incompatible_core_is_reported() {
+    let core = FakeCore::new(default_responses);
+    core.set_version(msst_ipc_protocol::version::make_version(9, 0, 0));
+    let client = start(&core);
+    let c = client.clone();
+    wait_for("incompatible", move || {
+        let c = c.clone();
+        async move { c.connection_status().await == ConnectionStatus::Incompatible }
+    })
+    .await;
+    let diag = client.connection_diagnostics().await;
+    assert!(diag.last_error.unwrap().contains("9.0.0"));
+
+    // Core upgraded → the client recovers without a restart.
+    core.set_version(msst_ipc_protocol::PROTOCOL_VERSION);
+    synced(&client).await;
+    client.shutdown();
+}
+
+#[tokio::test]
+async fn auth_decision_requeries_pending_requests() {
+    let pending = Arc::new(Mutex::new(json!({ "requests": [] })));
+    let p = pending.clone();
+    let core = FakeCore::new(move |req| match req {
+        IpcRequest::GetPendingAuth => Ok(p.lock().unwrap().clone()),
+        IpcRequest::AuthDecision { request_id, .. } if request_id == "gone" => {
+            Err(IpcError { code: "not_found".into(), message: "Auth request 'gone' not found or already resolved".into() })
+        }
+        IpcRequest::AuthDecision { .. } => {
+            *p.lock().unwrap() = json!({ "requests": [] });
+            Ok(json!({ "ok": true }))
+        }
+        other => default_responses(other),
+    });
+    let client = start(&core);
+    synced(&client).await;
+
+    *pending.lock().unwrap() = json!({ "requests": [{
+        "request_id": "a1", "src_device_id": "device-00000001", "proto": "tcp", "dst_port": 25565, "expires_in_secs": 30
+    }]});
+    core.push_event(IpcEvent::AccessRequestCreated {
+        request_id: "a1".into(),
+        src_device_id: "device-00000001".into(),
         src_user_id: None,
         src_device_display_name: None,
         src_user_display_name: None,
         proto: "tcp".into(),
         dst_port: 25565,
         service_name: None,
-    }).await;
+    });
+    let c = client.clone();
+    wait_for("deadline from Core", move || {
+        let c = c.clone();
+        async move { c.state_store().snapshot().await.pending_auth.first().is_some_and(|r| r.expires_at_ms.is_some()) }
+    })
+    .await;
 
-    let state = store.snapshot().await;
-    assert_eq!(state.pending_auth.len(), 1);
+    // Already-resolved request: Core's error is surfaced, not success.
+    let r = client.command(IpcRequest::AuthDecision { request_id: "gone".into(), decision: AuthDecision::DenyOnce }).await;
+    assert!(matches!(r, Err(ControllerError::CoreError { ref code, .. }) if code == "not_found"));
 
-    // 3. Second request arrives
-    store.apply_event(&IpcEvent::AccessRequestCreated {
-        request_id: "auth-002".into(),
-        src_device_id: "device-bob".into(),
-        src_user_id: Some("usr-bob".into()),
-        src_device_display_name: None,
-        src_user_display_name: Some("Bob".into()),
-        proto: "udp".into(),
-        dst_port: 19132,
-        service_name: Some("minecraft-bedrock".into()),
-    }).await;
-
-    let state = store.snapshot().await;
-    assert_eq!(state.pending_auth.len(), 2);
-
-    // 4. First times out
-    store.apply_event(&IpcEvent::AccessRequestTimeout {
-        request_id: "auth-001".into(),
-    }).await;
-
-    let state = store.snapshot().await;
-    assert_eq!(state.pending_auth.len(), 1);
-    assert_eq!(state.pending_auth[0].request_id, "auth-002");
-
-    // 5. Second times out
-    store.apply_event(&IpcEvent::AccessRequestTimeout {
-        request_id: "auth-002".into(),
-    }).await;
-
-    let state = store.snapshot().await;
-    assert!(state.pending_auth.is_empty());
+    client.command(IpcRequest::AuthDecision { request_id: "a1".into(), decision: AuthDecision::AllowOnce }).await.unwrap();
+    let c = client.clone();
+    wait_for("pending cleared", move || {
+        let c = c.clone();
+        async move { c.state_store().snapshot().await.pending_auth.is_empty() }
+    })
+    .await;
+    client.shutdown();
 }
 
 #[tokio::test]
-async fn state_store_acl_changes() {
-    let store = StateStore::new();
-
-    // Start with rules and groups in the snapshot
-    store.apply_snapshot(&serde_json::json!({
-        "acl_rules": [
-            {"id": "rule-1", "enabled": true, "action": "allow", "direction": "inbound",
-             "principals": [], "protocol_ports": [], "comment": null, "expires_at": null}
-        ],
-        "acl_groups": [
-            {"id": "group-1", "name": "Friends", "kind": "device", "member_ids": ["device-a"]}
-        ]
-    })).await;
-
-    let state = store.snapshot().await;
-    assert_eq!(state.acl_rules.len(), 1);
-    assert_eq!(state.acl_groups.len(), 1);
-
-    // Rule deleted via event
-    store.apply_event(&IpcEvent::AclChanged {
-        rule_id: "rule-1".into(),
-        action: "deleted".into(),
-    }).await;
-
-    let state = store.snapshot().await;
-    assert!(state.acl_rules.is_empty());
-
-    // Group deleted via event
-    store.apply_event(&IpcEvent::AclGroupChanged {
-        group_id: "group-1".into(),
-        action: "deleted".into(),
-    }).await;
-
-    let state = store.snapshot().await;
-    assert!(state.acl_groups.is_empty());
-}
-
-#[tokio::test]
-async fn state_store_node_lifecycle() {
-    let store = StateStore::new();
-
-    // Add nodes
-    store.apply_event(&IpcEvent::NodeAdded {
-        device_id: "device-1".into(),
-        ipv4: "172.22.1.1".into(),
-        ipv6: "fd22::1".into(),
-        hostname: Some("node1.ezplay.msst.net".into()),
-        display_name: Some("Node 1".into()),
-    }).await;
-
-    store.apply_event(&IpcEvent::NodeAdded {
-        device_id: "device-2".into(),
-        ipv4: "172.22.1.2".into(),
-        ipv6: "fd22::2".into(),
-        hostname: None,
-        display_name: None,
-    }).await;
-
-    let state = store.snapshot().await;
-    assert_eq!(state.nodes.len(), 2);
-
-    // State change
-    store.apply_event(&IpcEvent::NodeStateChanged {
-        device_id: "device-2".into(),
-        change: serde_json::json!({
-            "display_name": "Updated Node 2",
-            "hostname": "node2.ezplay.msst.net"
-        }),
-    }).await;
-
-    let state = store.snapshot().await;
-    let node2 = state.nodes.get("device-2").unwrap();
-    assert_eq!(node2.display_name.as_deref(), Some("Updated Node 2"));
-    assert_eq!(node2.hostname.as_deref(), Some("node2.ezplay.msst.net"));
-
-    // Path change
-    store.apply_event(&IpcEvent::PathChanged {
-        device_id: "device-1".into(),
-        old_mode: "relay".into(),
-        new_mode: "direct".into(),
-    }).await;
-
-    let state = store.snapshot().await;
-    let node1 = state.nodes.get("device-1").unwrap();
-    assert_eq!(node1.path_mode.as_deref(), Some("direct"));
-
-    // Remove one
-    store.apply_event(&IpcEvent::NodeRemoved {
-        device_id: "device-1".into(),
-    }).await;
-
-    let state = store.snapshot().await;
-    assert_eq!(state.nodes.len(), 1);
-    assert!(!state.nodes.contains_key("device-1"));
-}
-
-#[tokio::test]
-async fn state_store_coordinator_connection() {
-    let store = StateStore::new();
-
-    // Initial snapshot with ws_connected = true
-    store.apply_snapshot(&serde_json::json!({
-        "health": {"status": "ok", "ws_connected": true}
-    })).await;
-
-    let state = store.snapshot().await;
-    assert_eq!(state.health.ws_connected, Some(true));
-
-    // Coordinator disconnects
-    store.apply_event(&IpcEvent::CoordinatorConnectionChanged {
-        connected: false,
-    }).await;
-
-    let state = store.snapshot().await;
-    assert_eq!(state.health.ws_connected, Some(false));
-
-    // Reconnects
-    store.apply_event(&IpcEvent::CoordinatorConnectionChanged {
-        connected: true,
-    }).await;
-
-    let state = store.snapshot().await;
-    assert_eq!(state.health.ws_connected, Some(true));
-}
-
-#[tokio::test]
-async fn subscription_delivers_all_changes() {
-    let store = StateStore::new();
-    let mut rx = store.subscribe();
-
-    // Snapshot
-    store.apply_snapshot(&serde_json::json!({
-        "health": {"status": "ok"}
-    })).await;
-
-    let change: StateChange = tokio::time::timeout(Duration::from_millis(100), rx.recv())
-        .await
-        .unwrap()
-        .unwrap();
-    assert!(matches!(change, StateChange::SnapshotApplied));
-
-    // Event
-    store.apply_event(&IpcEvent::NodeAdded {
-        device_id: "device-test".into(),
-        ipv4: "172.22.1.1".into(),
-        ipv6: "fd22::1".into(),
-        hostname: None,
-        display_name: None,
-    }).await;
-
-    let change: StateChange = tokio::time::timeout(Duration::from_millis(100), rx.recv())
-        .await
-        .unwrap()
-        .unwrap();
-    assert!(matches!(change, StateChange::EventApplied(IpcEvent::NodeAdded { .. })));
-}
-
-#[tokio::test]
-async fn mock_transport_request_response_flow() {
-    let (mut controller, mut core) = mock::mock_pair();
-
-    // Controller sends a request
-    let req = IpcMessage::Request {
-        id: "req-flow-1".into(),
-        body: IpcRequest::Health,
-    };
-    controller.send(&req).await.unwrap();
-
-    // Core receives and responds
-    let received: IpcMessage = core.recv().await.unwrap();
-    match &received {
-        IpcMessage::Request { id, body } => {
-            assert_eq!(id, "req-flow-1");
-            assert!(matches!(body, IpcRequest::Health));
-        }
-        _ => panic!("Expected Request"),
-    }
-
-    let resp = IpcMessage::Response {
-        id: "req-flow-1".into(),
-        body: IpcResponse::Ok(serde_json::json!({"status": "ok"})),
-    };
-    core.send(&resp).await.unwrap();
-
-    // Controller receives the correlated response
-    let received: IpcMessage = controller.recv().await.unwrap();
-    match received {
-        IpcMessage::Response { id, body } => {
-            assert_eq!(id, "req-flow-1");
-            match body {
-                IpcResponse::Ok(val) => assert_eq!(val["status"], "ok"),
-                _ => panic!("Expected Ok response"),
-            }
-        }
-        _ => panic!("Expected Response"),
-    }
-}
-
-#[tokio::test]
-async fn mock_transport_multiple_events() {
-    let (mut controller, mut core) = mock::mock_pair();
-
-    // Core sends multiple events
-    let events = vec![
-        IpcEvent::NodeAdded {
-            device_id: "device-1".into(),
-            ipv4: "172.22.1.1".into(),
-            ipv6: "fd22::1".into(),
-            hostname: None,
-            display_name: None,
-        },
-        IpcEvent::NodeAdded {
-            device_id: "device-2".into(),
-            ipv4: "172.22.1.2".into(),
-            ipv6: "fd22::2".into(),
-            hostname: None,
-            display_name: None,
-        },
-        IpcEvent::CoordinatorConnectionChanged { connected: true },
-    ];
-
-    for event in &events {
-        core.send(&IpcMessage::Event { body: event.clone() }).await.unwrap();
-    }
-
-    // Controller receives all events in order
-    for _ in 0..3 {
-        let msg: IpcMessage = controller.recv().await.unwrap();
-        assert!(matches!(msg, IpcMessage::Event { .. }));
-    }
-}
-
-#[tokio::test]
-async fn snapshot_replaces_all_state_cleanly() {
-    let store = StateStore::new();
-
-    // Populate with initial data
-    store.apply_event(&IpcEvent::NodeAdded {
-        device_id: "old-node".into(),
-        ipv4: "172.22.1.1".into(),
-        ipv6: "fd22::1".into(),
-        hostname: None,
-        display_name: None,
-    }).await;
-
-    store.apply_event(&IpcEvent::AccessRequestCreated {
-        request_id: "old-auth".into(),
-        src_device_id: "device-x".into(),
-        src_user_id: None,
-        src_device_display_name: None,
-        src_user_display_name: None,
-        proto: "tcp".into(),
-        dst_port: 80,
-        service_name: None,
-    }).await;
-
-    let state = store.snapshot().await;
-    assert_eq!(state.nodes.len(), 1);
-    assert_eq!(state.pending_auth.len(), 1);
-
-    // Apply a fresh snapshot — should replace everything
-    store.apply_snapshot(&serde_json::json!({
-        "health": {"status": "ok", "is_authenticated": true},
-        "nodes": [
-            {"device_id": "new-node", "ipv4": "172.22.2.1", "ipv6": "fd22::100"}
-        ],
-        "room": {"room_id": "room-new", "room_name": "New Room", "relay": null, "peers": []},
-        "acl_rules": [],
-        "acl_groups": [],
-        "pending_auth": []
-    })).await;
-
-    let state = store.snapshot().await;
-    assert!(!state.nodes.contains_key("old-node"));
-    assert!(state.nodes.contains_key("new-node"));
-    assert!(state.pending_auth.is_empty());
-    assert_eq!(state.room.room_id.as_deref(), Some("room-new"));
-    assert!(state.health.is_authenticated);
+async fn get_services_rejected_for_old_core() {
+    let core = FakeCore::new(default_responses);
+    core.set_version(msst_ipc_protocol::version::make_version(0, 1, 0));
+    let client = start(&core);
+    synced(&client).await;
+    let r = client.query(IpcRequest::GetServices).await;
+    assert!(matches!(r, Err(ControllerError::Unsupported(_))), "got {r:?}");
+    client.shutdown();
 }

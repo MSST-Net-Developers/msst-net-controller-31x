@@ -1,0 +1,34 @@
+# JNI glue for the Android app: starts the embedded Core (VpnService side)
+# and exposes this Controller library to Kotlin (UI side).  Standalone
+# workspace so Android cross-compilation stays separate from the desktop
+# workspace (as in 3.0.x).
+[workspace]
+
+[package]
+name = "msst-jni"
+version = "3.1.0-alpha.1"
+edition = "2024"
+
+[lib]
+name = "msst_jni"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Core's embedded lifecycle API (msst-net-core-31x/src/embedded.rs).
+msst-net-core = { path = "../../../msst-net-core-31x" }
+# The Controller library: IPC client, view, change notifications.
+msst-net-controller = { path = "../.." }
+msst-ipc-protocol = { path = "../../../msst-net-core-31x/crates/msst-ipc-protocol" }
+
+jni = "0.21"
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "net", "macros"] }
+serde_json = "1"
+tracing = "0.1"
+
+[profile.release]
+# unwind (not abort) so JNI entry points can report panics as errors
+panic = "unwind"
+lto = "fat"
+codegen-units = 1
+opt-level = "z"
+strip = true

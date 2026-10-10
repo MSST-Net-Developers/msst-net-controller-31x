@@ -49,6 +49,10 @@ pub enum ControllerError {
     #[error("Core error [{code}]: {message}")]
     CoreError { code: String, message: String },
 
+    /// The request is not supported by the connected Core's protocol version.
+    #[error("{0}")]
+    Unsupported(String),
+
     // ── State errors ─────────────────────────────────────────────────────────
     /// The state store received an event that could not be applied.
     #[error("state error: {0}")]
@@ -125,9 +129,87 @@ impl ControllerError {
             Self::RequestTimeout { .. } => "timeout",
             Self::ClientShutdown { .. } => "shutdown",
             Self::CoreError { .. } => "core",
+            Self::Unsupported(_) => "unsupported",
             Self::State(_) => "state",
             Self::Shutdown => "shutdown",
             Self::Io(_) => "io",
+        }
+    }
+}
+
+// ── UI-facing error ──────────────────────────────────────────────────────────
+
+/// An error as presented to the UI: a stable machine-readable category and
+/// code, plus a message for ordinary users (AGENTS.md §7.4).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct UiError {
+    pub category: &'static str,
+    /// Core's error code for `core` errors, otherwise the category.
+    pub code: String,
+    pub message: String,
+    /// Technical detail for diagnostics (e.g. Core's raw error text) when
+    /// `message` is a rewritten summary.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+impl From<ControllerError> for UiError {
+    fn from(e: ControllerError) -> Self {
+        let message = e.user_message();
+        let (code, detail) = match &e {
+            ControllerError::CoreError { code, message: raw } => {
+                (code.clone(), (raw != &message).then(|| raw.clone()))
+            }
+            other => (other.category().to_string(), None),
+        };
+        UiError { category: e.category(), code, message, detail }
+    }
+}
+
+/// User-facing text for a Core error code.  Infrastructure failures get a
+/// plain explanation (their raw text is transport detail); validation
+/// failures keep Core's specific reason.
+fn core_error_message(code: &str, raw: &str) -> String {
+    let summary = match code {
+        "coordinator_unavailable" => return "无法连接协调服务器，请检查网络连接后重试。".into(),
+        "coordinator_error" => return "协调服务器返回了错误，请稍后重试。".into(),
+        "relay_unavailable" => return "无法获取可用的中转服务器，请检查网络连接后重试。".into(),
+        "persist_failed" => return "客户端核心无法保存配置（磁盘写入失败），更改未生效。".into(),
+        "not_initialized" => return "客户端核心尚未完成初始化，请稍后重试。".into(),
+        "register_failed" => return "向协调服务器注册设备失败，请稍后重试。".into(),
+        "room_create_failed" => return "创建房间失败，请稍后重试。".into(),
+        "auth_failed" => "认证失败",
+        "invalid_rule" => "规则无效",
+        "invalid_group" | "invalid_patch" => "内容无效",
+        "invalid_handle" => "助记符无效",
+        "invalid_settings" => "设置无效",
+        "mnemonic_not_found" => "找不到该助记符",
+        "room_rejected" => "无法加入房间",
+        _ => return raw.to_string(),
+    };
+    format!("{summary}：{raw}")
+}
+
+impl ControllerError {
+    /// A message for ordinary users: what failed and, where possible, what
+    /// to do next.
+    pub fn user_message(&self) -> String {
+        match self {
+            Self::ConnectionFailed { .. } | Self::NotConnected { .. } => {
+                "未连接到 MSST-Net 核心服务。请确认核心服务正在运行，控制器会自动重连。".into()
+            }
+            Self::ConnectionLost => "与核心服务的连接已断开，操作结果未知。重连后请查看最新状态。".into(),
+            Self::VersionMismatch { remote, local } => {
+                format!("核心服务的协议版本（{remote}）与控制器（{local}）不兼容，请将两者更新到同一版本。")
+            }
+            Self::RequestTimeout { timeout_secs, .. } => {
+                format!("核心服务在 {timeout_secs} 秒内未响应。操作可能仍在执行，请稍后查看最新状态。")
+            }
+            Self::CoreError { code, message } => core_error_message(code, message),
+            Self::Unsupported(m) => m.clone(),
+            Self::FrameTooLarge { .. } | Self::Codec(_) => "核心服务返回了无法识别的数据，请将日志提供给开发组。".into(),
+            Self::ClientShutdown { .. } | Self::Shutdown => "控制器正在退出。".into(),
+            Self::State(m) | Self::Io(m) => m.clone(),
         }
     }
 }
@@ -208,6 +290,24 @@ mod tests {
         let msg = e.to_string();
         assert!(msg.contains("1.0.0"));
         assert!(msg.contains("0.1.0"));
+    }
+
+    #[test]
+    fn core_error_messages_for_users() {
+        let ui = UiError::from(ControllerError::CoreError {
+            code: "coordinator_unavailable".into(),
+            message: "error sending request for url (http://127.0.0.1:9/relays)".into(),
+        });
+        assert_eq!(ui.code, "coordinator_unavailable");
+        assert!(ui.message.starts_with("无法连接协调服务器"));
+        assert!(ui.detail.unwrap().contains("127.0.0.1"));
+
+        let ui = UiError::from(ControllerError::CoreError { code: "invalid_rule".into(), message: "Invalid port '99999'".into() });
+        assert_eq!(ui.message, "规则无效：Invalid port '99999'");
+
+        let ui = UiError::from(ControllerError::CoreError { code: "not_authenticated".into(), message: "请先完成 OIDC 认证".into() });
+        assert_eq!(ui.message, "请先完成 OIDC 认证");
+        assert!(ui.detail.is_none());
     }
 
     #[test]

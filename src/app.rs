@@ -45,8 +45,11 @@ impl App {
         let state_log = tokio::spawn(async move {
             loop {
                 match state_rx.recv().await {
-                    Ok(StateChange::SnapshotApplied) => {
-                        tracing::info!("State snapshot applied from Core");
+                    Ok(StateChange::SyncChanged(sync)) => {
+                        tracing::info!(?sync, "State sync changed");
+                    }
+                    Ok(StateChange::ResourceRefreshed(resource)) => {
+                        tracing::debug!(?resource, "Resource refreshed from Core");
                     }
                     Ok(StateChange::EventApplied(event)) => {
                         tracing::debug!(?event, "IPC event applied");
