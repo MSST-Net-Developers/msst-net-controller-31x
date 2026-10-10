@@ -118,7 +118,7 @@
           <span class="mode-group-title">使用房间模式（推荐）</span>
         </div>
         {#if health && !health.is_authenticated && controller.coreReady}
-          <p class="mode-group-notice">ℹ️ 当前以免认证身份接入，仅可使用房间模式，且您创建的房间最多支持 5 名成员（含房主）。</p>
+          <p class="mode-group-notice">ℹ️ 当前以免认证身份接入，仅可使用房间模式。</p>
         {/if}
         <div class="btn-group">
           <button class="action-btn primary" style={controller.coreReady ? '' : 'opacity:0.45;cursor:not-allowed;'}

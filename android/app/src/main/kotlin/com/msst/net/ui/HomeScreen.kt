@@ -161,7 +161,7 @@ private fun IdlePage(
                                 color = MaterialTheme.colorScheme.onSecondaryContainer)
                         }
                         Text(
-                            "您正以免认证身份接入 MSST-Net，仅可使用房间模式。由您创建的房间最多支持 5 名成员（含房主）。如需使用大内网模式或享有更多权限，请完成 MSST 联合认证。",
+                            "您正以免认证身份接入 MSST-Net，仅可使用房间模式。如需使用大内网模式或享有更多权限，请完成 MSST 联合认证。",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSecondaryContainer,
                         )
