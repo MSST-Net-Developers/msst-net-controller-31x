@@ -28,51 +28,72 @@ pub type IpcStream = Box<dyn AsyncStream>;
 
 // ── Connection ───────────────────────────────────────────────────────────────
 
-/// Resolve the IPC socket/pipe path.
+/// Candidate IPC socket/pipe paths, in the order they are tried.
 ///
-/// Priority:
-/// 1. `MSST_IPC_PATH` env var (explicit override)
-/// 2. Platform-specific defaults:
-///    - Linux: `$XDG_RUNTIME_DIR/msst-net/ipc.sock` → `/run/msst-net/ipc.sock`
-///    - macOS: `$TMPDIR/msst-net/ipc.sock` → `/var/run/msst-net/ipc.sock`
+/// 1. `MSST_IPC_PATH` env var (explicit override; the only candidate)
+/// 2. Platform defaults, matching where Core binds (Core's
+///    `resolve_ipc_socket`: per-user directory when not root, system
+///    directory when root):
+///    - Linux: `$XDG_RUNTIME_DIR/msst-net/ipc.sock`, `/run/msst-net/ipc.sock`
+///    - macOS: `$TMPDIR/msst-net/ipc.sock`, `/var/run/msst-net/ipc.sock`
 ///    - Windows: `\\.\pipe\msst-net-ipc`
-pub fn resolve_ipc_path() -> String {
+///
+/// The Controller cannot know whether Core runs as root, and a socket file
+/// left behind by an earlier Core may exist with nobody listening, so the
+/// paths are tried by connecting, not by checking that the file exists.
+pub fn ipc_path_candidates() -> Vec<String> {
     if let Ok(p) = std::env::var("MSST_IPC_PATH") {
-        return p;
+        return vec![p];
     }
     #[cfg(target_os = "linux")]
     {
-        if let Ok(xdg) = std::env::var("XDG_RUNTIME_DIR") {
-            let p = format!("{xdg}/msst-net/ipc.sock");
-            if std::path::Path::new(&p).exists() {
-                return p;
-            }
-        }
-        "/run/msst-net/ipc.sock".to_string()
+        let mut v: Vec<String> = std::env::var("XDG_RUNTIME_DIR").map(|xdg| format!("{xdg}/msst-net/ipc.sock")).into_iter().collect();
+        v.push("/run/msst-net/ipc.sock".to_string());
+        v
     }
     #[cfg(target_os = "macos")]
     {
-        if let Ok(tmpdir) = std::env::var("TMPDIR") {
-            let p = format!("{}/msst-net/ipc.sock", tmpdir.trim_end_matches('/'));
-            if std::path::Path::new(&p).exists() {
-                return p;
-            }
-        }
-        "/var/run/msst-net/ipc.sock".to_string()
+        let mut v: Vec<String> = std::env::var("TMPDIR")
+            .map(|tmpdir| format!("{}/msst-net/ipc.sock", tmpdir.trim_end_matches('/')))
+            .into_iter()
+            .collect();
+        v.push("/var/run/msst-net/ipc.sock".to_string());
+        v
     }
     #[cfg(windows)]
     {
-        r"\\.\pipe\msst-net-ipc".to_string()
+        vec![r"\\.\pipe\msst-net-ipc".to_string()]
     }
     #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
     {
-        "/run/msst-net/ipc.sock".to_string()
+        vec!["/run/msst-net/ipc.sock".to_string()]
     }
 }
 
-/// Connect to Core's IPC endpoint at the default (or overridden) path.
+/// Connect to Core's IPC endpoint: the first candidate path that accepts
+/// a connection (see [`ipc_path_candidates`]).
 pub async fn connect() -> Result<IpcStream> {
-    connect_to(&resolve_ipc_path()).await
+    connect_first(&ipc_path_candidates()).await
+}
+
+/// Connect to the first of `paths` that accepts a connection.  If none does,
+/// the error lists every path and why it failed.
+pub async fn connect_first(paths: &[String]) -> Result<IpcStream> {
+    let mut failures = Vec::new();
+    for path in paths {
+        match connect_to(path).await {
+            Ok(s) => return Ok(s),
+            Err(ControllerError::ConnectionFailed { reason, .. }) => failures.push((path.as_str(), reason)),
+            Err(e) => return Err(e),
+        }
+    }
+    Err(match failures.as_slice() {
+        [(path, reason)] => ControllerError::ConnectionFailed { path: path.to_string(), reason: reason.clone() },
+        _ => ControllerError::ConnectionFailed {
+            path: paths.join(", "),
+            reason: failures.iter().map(|(p, r)| format!("{p}: {r}")).collect::<Vec<_>>().join("; "),
+        },
+    })
 }
 
 /// Connect to Core's IPC endpoint at `path`.
@@ -168,8 +189,39 @@ mod tests {
     use msst_ipc_protocol::{IpcEvent, IpcRequest};
 
     #[test]
-    fn resolve_ipc_path_returns_non_empty() {
-        assert!(!resolve_ipc_path().is_empty());
+    fn ipc_path_candidates_non_empty() {
+        let c = ipc_path_candidates();
+        assert!(!c.is_empty() && c.iter().all(|p| !p.is_empty()));
+    }
+
+    /// A socket file left by an earlier Core (nobody listening) must not hide
+    /// the Core listening on a later candidate path.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn stale_socket_file_falls_through_to_live_core() {
+        let dir = std::env::temp_dir().join(format!("msst-transport-stale-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let stale = dir.join("stale.sock");
+        drop(std::os::unix::net::UnixListener::bind(&stale).unwrap()); // file stays, nobody listens
+        let live = dir.join("live.sock");
+        let listener = tokio::net::UnixListener::bind(&live).unwrap();
+        let accept = tokio::spawn(async move { listener.accept().await.is_ok() });
+
+        let paths = [stale.to_string_lossy().into_owned(), live.to_string_lossy().into_owned()];
+        assert!(connect_first(&paths).await.is_ok());
+        assert!(accept.await.unwrap());
+
+        let missing = dir.join("missing.sock").to_string_lossy().into_owned();
+        match connect_first(&[paths[0].clone(), missing.clone()]).await {
+            Err(ControllerError::ConnectionFailed { path, reason }) => {
+                assert!(path.contains(&paths[0]) && path.contains(&missing), "{path}");
+                assert!(reason.contains(&paths[0]) && reason.contains(&missing), "{reason}");
+            }
+            Err(e) => panic!("unexpected error {e}"),
+            Ok(_) => panic!("connected to nothing"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
