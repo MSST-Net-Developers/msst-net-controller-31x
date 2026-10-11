@@ -5,8 +5,8 @@ plugins {
 }
 
 val appVersion:  String = providers.gradleProperty("msstVersionName").get()
-val appCodename: String = providers.environmentVariable("MSST_CODENAME")
-    .orElse(providers.gradleProperty("msstCodename")).get()
+// Release codename for all of 3.1.x (same as `CODENAME` in the Controller crate).
+val appCodename = "微分方程"
 
 android {
     namespace = "com.msst.net"

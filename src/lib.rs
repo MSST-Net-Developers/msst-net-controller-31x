@@ -17,3 +17,7 @@ pub mod tauri_commands;
 pub mod webui;
 
 pub use error::ControllerError;
+
+/// Release codename, shared by every 3.1.x release (Tauri/WebUI and the
+/// Android Controller use the same name).
+pub const CODENAME: &str = "微分方程";

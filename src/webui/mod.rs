@@ -147,7 +147,7 @@ async fn info(State(state): State<WebState>) -> Json<serde_json::Value> {
     let hs = state.client.handshake_result().await;
     Json(json!({
         "version": env!("CARGO_PKG_VERSION"),
-        "codename": option_env!("MSST_CODENAME").unwrap_or("unknown"),
+        "codename": crate::CODENAME,
         "core_protocol": hs.map(|h| format!("{}.{}.{}", h.remote_decoded.0, h.remote_decoded.1, h.remote_decoded.2)),
     }))
 }

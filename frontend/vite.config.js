@@ -7,12 +7,15 @@ const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 
 // @ts-expect-error process is a nodejs global
 const env = process.env;
 const host = env.TAURI_DEV_HOST;
+// Release codename for all of 3.1.x (same as `CODENAME` in src/lib.rs and
+// the Android Controller).
+const CODENAME = '微分方程';
 
 export default defineConfig({
   plugins: [sveltekit()],
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
-    __APP_CODENAME__: JSON.stringify(env.MSST_CODENAME ?? 'unknown'),
+    __APP_CODENAME__: JSON.stringify(CODENAME),
   },
   clearScreen: false,
   server: {

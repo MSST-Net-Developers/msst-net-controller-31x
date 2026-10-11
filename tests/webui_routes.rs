@@ -109,6 +109,10 @@ async fn login_view_ipc_logout() {
     assert_eq!(status, StatusCode::OK);
     assert!(view.get("connection").is_some() && view.get("state").is_some());
 
+    let (status, _, info) = call(&e.state, [127, 0, 0, 1], get("/api/info", Some(&cookie))).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(info["codename"], msst_net_controller::CODENAME);
+
     // Wait for the client to connect to the fake Core.
     for _ in 0..200 {
         if e.state.client.connection_status().await == msst_net_controller::state::ConnectionStatus::Connected {
