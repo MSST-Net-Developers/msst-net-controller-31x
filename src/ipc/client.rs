@@ -35,7 +35,7 @@ use std::time::Duration;
 
 use msst_ipc_protocol::{IpcError, IpcMessage, IpcRequest, IpcResponse};
 use serde::Serialize;
-use tokio::sync::{broadcast, mpsc, oneshot, watch, RwLock};
+use tokio::sync::{broadcast, mpsc, oneshot, watch, Notify, RwLock};
 
 use super::connection::{ConnectionDiagnostics, ConnectionStateMachine, Transition};
 use super::handshake::{self, Capabilities, HandshakeResult};
@@ -50,7 +50,10 @@ use crate::state::{ConnectionStatus, Resource, ResourceData, StateChange, StateS
 pub struct IpcClientConfig {
     /// Initial reconnect delay.
     pub reconnect_base_ms: u64,
-    /// Maximum reconnect delay.
+    /// Maximum reconnect delay.  Kept short: Core is a local socket/pipe, so
+    /// a failed attempt is nearly free, and a Core started after the
+    /// Controller should be picked up within seconds, not after a long
+    /// backoff the user mistakes for "never reconnects".
     pub reconnect_max_ms: u64,
     /// Retry delay after a protocol version mismatch (Core may be upgraded).
     pub incompatible_retry_ms: u64,
@@ -65,7 +68,7 @@ impl Default for IpcClientConfig {
     fn default() -> Self {
         Self {
             reconnect_base_ms: 1_000,
-            reconnect_max_ms: 30_000,
+            reconnect_max_ms: 3_000,
             incompatible_retry_ms: 60_000,
             request_timeout: Duration::from_secs(15),
             poll_interval: Duration::from_secs(10),
@@ -96,6 +99,17 @@ pub struct ControllerView {
     pub state: SystemState,
 }
 
+/// What [`IpcClient::retry_now`] did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RetryOutcome {
+    /// Not connected: a connection attempt starts now instead of after the
+    /// remaining backoff.
+    Reconnecting,
+    /// Connected: every resource is being re-queried from Core.
+    Resyncing,
+}
+
 // ── IpcClient ────────────────────────────────────────────────────────────────
 
 struct Outgoing {
@@ -120,6 +134,8 @@ struct Inner {
     shutdown_tx: watch::Sender<bool>,
     handshake: RwLock<Option<HandshakeResult>>,
     refresh_tx: mpsc::UnboundedSender<RefreshMsg>,
+    /// Cuts the current backoff wait short (user asked to retry now).
+    retry_now: Notify,
 }
 
 /// The IPC client — owns the connection to Core.
@@ -152,6 +168,7 @@ impl IpcClient {
                 shutdown_tx,
                 handshake: RwLock::new(None),
                 refresh_tx,
+                retry_now: Notify::new(),
             }),
         };
         tokio::spawn(client.clone().connection_loop(connector));
@@ -263,6 +280,23 @@ impl IpcClient {
         let _ = self.inner.refresh_tx.send(RefreshMsg::Resources(resources));
     }
 
+    /// User-requested retry.  While not connected, the next connection
+    /// attempt starts immediately (and the backoff restarts from its base);
+    /// while connected, the live session is kept and all state is re-queried
+    /// from Core instead.  Either way, the outcome arrives through the usual
+    /// status and state updates.
+    pub async fn retry_now(&self) -> RetryOutcome {
+        if self.connection_status().await == ConnectionStatus::Connected {
+            let _ = self.inner.refresh_tx.send(RefreshMsg::Sync);
+            RetryOutcome::Resyncing
+        } else {
+            // Stores a permit if the loop is mid-attempt, so the wait after
+            // that attempt is skipped rather than the request being lost.
+            self.inner.retry_now.notify_one();
+            RetryOutcome::Reconnecting
+        }
+    }
+
     /// Stop the background tasks.
     pub fn shutdown(&self) {
         let _ = self.inner.shutdown_tx.send(true);
@@ -324,11 +358,16 @@ impl IpcClient {
 
             let wait = next_delay.unwrap_or(delay);
             tokio::select! {
-                _ = tokio::time::sleep(Duration::from_millis(wait)) => {}
+                _ = tokio::time::sleep(Duration::from_millis(wait)) => {
+                    if next_delay.is_none() {
+                        delay = (delay * 2).min(cfg.reconnect_max_ms);
+                    }
+                }
+                _ = self.inner.retry_now.notified() => {
+                    tracing::info!("Reconnect requested, retrying now");
+                    delay = cfg.reconnect_base_ms;
+                }
                 _ = shutdown.changed() => break,
-            }
-            if next_delay.is_none() {
-                delay = (delay * 2).min(cfg.reconnect_max_ms);
             }
         }
         tracing::info!("IPC connection loop exited");
@@ -594,7 +633,7 @@ mod tests {
     fn default_config() {
         let cfg = IpcClientConfig::default();
         assert_eq!(cfg.reconnect_base_ms, 1_000);
-        assert_eq!(cfg.reconnect_max_ms, 30_000);
+        assert_eq!(cfg.reconnect_max_ms, 3_000);
     }
 
     #[test]

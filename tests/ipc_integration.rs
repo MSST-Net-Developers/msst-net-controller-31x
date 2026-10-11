@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use msst_ipc_protocol::{AuthDecision, IpcError, IpcEvent, IpcRequest};
 use msst_net_controller::error::ControllerError;
-use msst_net_controller::ipc::client::{IpcClient, IpcClientConfig};
+use msst_net_controller::ipc::client::{IpcClient, IpcClientConfig, RetryOutcome};
 use msst_net_controller::ipc::mock::{FakeCore, default_responses};
 use msst_net_controller::state::{ConnectionStatus, StateStore, SyncState};
 use serde_json::json;
@@ -253,5 +253,88 @@ async fn get_services_rejected_for_old_core() {
     synced(&client).await;
     let r = client.query(IpcRequest::GetServices).await;
     assert!(matches!(r, Err(ControllerError::Unsupported(_))), "got {r:?}");
+    client.shutdown();
+}
+
+/// Controller started before Core (real Unix socket, default backoff): once
+/// Core starts listening, the Controller connects within a few seconds — it
+/// must not need a restart or sit out a long backoff (the old 30 s cap left
+/// users waiting long enough to assume it never reconnects).
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn core_started_after_controller_is_picked_up_promptly() {
+    use msst_net_controller::ipc::client::Connector;
+    use msst_net_controller::ipc::transport;
+
+    let dir = std::env::temp_dir().join(format!("msst-late-core-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let sock = dir.join("ipc.sock").to_string_lossy().into_owned();
+    let path = sock.clone();
+    let connector: Connector = Arc::new(move || {
+        let path = path.clone();
+        Box::pin(async move { transport::connect_first(&[path]).await })
+    });
+    let client = IpcClient::with_connector(IpcClientConfig::default(), StateStore::new(), connector);
+
+    // Core starts 8 s later: an uncapped 1/2/4/8 s backoff would only retry
+    // at 15 s; the capped one retries every 3 s by then.
+    tokio::time::sleep(Duration::from_secs(8)).await;
+    assert!(matches!(client.connection_status().await, ConnectionStatus::Reconnecting { .. }));
+
+    std::fs::create_dir_all(&dir).unwrap();
+    let listener = tokio::net::UnixListener::bind(&sock).unwrap();
+    let core = FakeCore::new(default_responses);
+    let c = core.clone();
+    let accept = tokio::spawn(async move {
+        while let Ok((stream, _)) = listener.accept().await {
+            c.serve_stream(stream);
+        }
+    });
+
+    let started = std::time::Instant::now();
+    while client.connection_status().await != ConnectionStatus::Connected {
+        assert!(started.elapsed() < Duration::from_millis(4500), "not connected {:?} after Core started", started.elapsed());
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    synced(&client).await;
+
+    client.shutdown();
+    accept.abort();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The status-bar retry: while Core is down it cuts the backoff wait short;
+/// while connected it keeps the session and re-queries every resource.
+#[tokio::test]
+async fn retry_now_skips_backoff_or_resyncs() {
+    let core = FakeCore::new(default_responses);
+    core.set_running(false);
+    // A backoff far longer than the test waits.
+    let cfg = IpcClientConfig { reconnect_base_ms: 60_000, reconnect_max_ms: 60_000, ..fast_config() };
+    let client = IpcClient::with_connector(cfg, StateStore::new(), core.connector());
+    let c = client.clone();
+    wait_for("first attempt fails", move || {
+        let c = c.clone();
+        async move { matches!(c.connection_status().await, ConnectionStatus::Reconnecting { .. }) }
+    })
+    .await;
+
+    core.set_running(true);
+    assert_eq!(client.retry_now().await, RetryOutcome::Reconnecting);
+    synced(&client).await;
+
+    core.clear_requests();
+    assert_eq!(client.retry_now().await, RetryOutcome::Resyncing);
+    let k = core.clone();
+    wait_for("every resource re-queried", move || {
+        let k = k.clone();
+        async move {
+            let r = k.requests();
+            r.iter().any(|q| matches!(q, IpcRequest::GetAclRules)) && r.iter().any(|q| matches!(q, IpcRequest::Health))
+        }
+    })
+    .await;
+    synced(&client).await;
+    assert_eq!(client.connection_diagnostics().await.disconnections, 0, "a connected retry must not drop the session");
     client.shutdown();
 }

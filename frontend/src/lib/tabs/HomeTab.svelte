@@ -185,7 +185,8 @@
       <span class="status-label">客户端核心状态：</span>
       <span class="indicator {controller.status}"></span>
       <span class="status-text {controller.status}">{controller.statusLabel}</span>
-      <button class="refresh-btn" onclick={() => controller.refresh()} title="立即刷新"><Icon icon="mdi:refresh" width={17} height={17} /></button>
+      <button class="refresh-btn" class:spinning={controller.retrying} onclick={() => controller.retry()} disabled={controller.retrying}
+        title={controller.connected ? '重新读取客户端核心状态' : '立即重试连接客户端核心'}><Icon icon="mdi:refresh" width={17} height={17} /></button>
     </footer>
     <button class="auth-fab" onclick={() => (showAuth = true)} title="接入认证" aria-label="接入认证"><Icon icon="mdi:account-key-outline" width={22} height={22} /></button>
   </div>

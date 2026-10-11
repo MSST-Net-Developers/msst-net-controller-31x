@@ -113,6 +113,13 @@ export function clearAclRules(): Promise<ClearRulesResult> {
   return isTauri ? invoke('clear_acl_rules') : http('POST', '/api/acl/clear', {});
 }
 
+/** Retry the Core connection now (or re-read all state if connected).  The
+ *  result shows up in the view like any other status change. */
+export async function retryCore(): Promise<'reconnecting' | 'resyncing'> {
+  if (isTauri) return invoke('retry_core');
+  return (await http<{ outcome: 'reconnecting' | 'resyncing' }>('POST', '/api/reconnect', {})).outcome;
+}
+
 /** Save log text: native save dialog on desktop, download in the browser.
  *  Returns false if the user cancelled. */
 export async function exportLogs(content: string): Promise<boolean> {

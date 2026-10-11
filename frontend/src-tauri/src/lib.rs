@@ -78,6 +78,7 @@ pub fn run() {
             tauri_commands::get_view,
             tauri_commands::ipc_request,
             tauri_commands::clear_acl_rules,
+            tauri_commands::retry_core,
             export_logs,
         ])
         .run(tauri::generate_context!())

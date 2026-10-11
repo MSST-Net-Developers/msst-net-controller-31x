@@ -102,7 +102,13 @@ impl FakeCore {
         Ok(Box::new(client))
     }
 
-    async fn serve(self, stream: tokio::io::DuplexStream) {
+    /// Serve one Controller connection accepted on a real transport (e.g. a
+    /// Unix socket), for tests that exercise the platform connector.
+    pub fn serve_stream(&self, stream: impl transport::AsyncStream + 'static) {
+        tokio::spawn(self.clone().serve(stream));
+    }
+
+    async fn serve(self, stream: impl transport::AsyncStream + 'static) {
         let (mut reader, mut writer) = tokio::io::split(stream);
         let version = *self.version.lock().unwrap();
         if writer.write_all(&version.to_be_bytes()).await.is_err() {

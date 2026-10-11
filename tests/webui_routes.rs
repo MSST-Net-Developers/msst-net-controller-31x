@@ -120,6 +120,11 @@ async fn login_view_ipc_logout() {
     assert_eq!(status, StatusCode::OK, "{v}");
     assert_eq!(v["status"], "ok");
 
+    // Status-bar retry while connected keeps the session and resyncs.
+    let (status, _, v) = call(&e.state, [127, 0, 0, 1], post("/api/reconnect", json!({}), Some(&cookie))).await;
+    assert_eq!(status, StatusCode::OK, "{v}");
+    assert_eq!(v["outcome"], "resyncing");
+
     // Core's rejection: its code, a user message, and Core's text as detail.
     let body = json!({ "type": "delete_acl_rule", "params": { "rule_id": "x" } });
     let (status, _, v) = call(&e.state, [127, 0, 0, 1], post("/api/ipc", body, Some(&cookie))).await;

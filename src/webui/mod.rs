@@ -67,6 +67,7 @@ pub fn build_router(state: WebState) -> Router {
         .route("/api/view", get(view))
         .route("/api/ipc", post(ipc))
         .route("/api/acl/clear", post(clear_rules))
+        .route("/api/reconnect", post(reconnect))
         .route("/ws/events", get(ws_events))
         .layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
 
@@ -222,6 +223,10 @@ async fn clear_rules(State(state): State<WebState>) -> Response {
         Ok(v) => Json(v).into_response(),
         Err(e) => error_response(e),
     }
+}
+
+async fn reconnect(State(state): State<WebState>) -> Response {
+    Json(json!({ "outcome": state.client.retry_now().await })).into_response()
 }
 
 // ── Events ───────────────────────────────────────────────────────────────────

@@ -102,7 +102,7 @@ Types derived from Core's event model:
 - Owns the transport and state store
 - Manages connection lifecycle with exponential backoff reconnection
 - On connect: version handshake → `GetSystemState` snapshot → event loop
-- On disconnect: mark Reconnecting, attempt reconnect with backoff (1s → 2s → 4s → 8s → max 30s)
+- On disconnect: mark Reconnecting, attempt reconnect with backoff (1s → 2s → max 3s; Core is local, so retries are cheap)
 - `send_request(&self, req: IpcRequest) -> Result<IpcResponse>` with request ID correlation and timeout
 - `subscribe_events(&self) -> broadcast::Receiver<IpcEvent>` for UI layer
 

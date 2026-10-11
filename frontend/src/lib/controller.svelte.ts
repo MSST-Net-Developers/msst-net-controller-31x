@@ -2,7 +2,7 @@
 // whenever the backend says it changed.  Components read from here and send
 // commands through `ipc()`; they never keep their own copy of Core state.
 
-import { getView, onNotice } from '$lib/api/client';
+import { getView, onNotice, retryCore } from '$lib/api/client';
 import type { ControllerView, Health, UiNotice } from '$lib/types';
 
 /** Overall status shown in the status bar. */
@@ -31,6 +31,25 @@ class Controller {
       if (seq < this.#applied) return;
       this.backendError = e instanceof Error ? e.message : String(e);
     }
+  }
+
+  /** A user-requested retry is being submitted. */
+  retrying = $state(false);
+
+  /** User-requested retry: reconnect now if not connected, otherwise
+   *  re-read everything from Core; then re-read the view. */
+  async retry() {
+    if (this.retrying) return;
+    this.retrying = true;
+    try {
+      await retryCore();
+    } catch (e) {
+      // The backend itself is unreachable; refresh() reports it.
+      console.warn('retry failed', e);
+    } finally {
+      this.retrying = false;
+    }
+    await this.refresh();
   }
 
   /** Start listening; returns a stop function. */
