@@ -7,6 +7,7 @@
   import { ipc, errorMessage } from '$lib/api/client';
   import { R, type AuthDecision } from '$lib/api/requests';
   import { controller } from '$lib/controller.svelte';
+  import Icon from '$lib/icons';
 
   const queue = $derived(controller.connected ? (controller.state?.pending_auth ?? []) : []);
   const req = $derived(queue[0] ?? null);
@@ -42,7 +43,7 @@
 {#if req}
   <div class="modal-backdrop auth-backdrop">
     <div class="modal auth-modal">
-      <div class="auth-icon">🔐</div>
+      <div class="auth-icon"><Icon icon="mdi:shield-lock-outline" width={36} height={36} /></div>
       <h2 class="modal-title auth-title">访问请求
         {#if queue.length > 1}<span class="auth-queue-badge">{queue.length}</span>{/if}
       </h2>
@@ -56,7 +57,7 @@
           {/if}
           <b>{req.src_device_display_name ?? req.src_device_id}</b>
         </p>
-        {#if req.src_device_display_name}<p class="inline-note" style="user-select:text">{req.src_device_id}</p>{/if}
+        {#if req.src_device_display_name}<p class="inline-note selectable mono">{req.src_device_id}</p>{/if}
         {#if req.service_name}
           <p class="auth-what">想访问您的 <b>{req.service_name}</b> 服务（{req.proto.toUpperCase()}/{req.dst_port}）</p>
         {:else}
@@ -67,8 +68,8 @@
 
       <div class="auth-countdown">
         {#if remaining != null}
-          <div class="countdown-bar"
-            style="width:{Math.min(100, (remaining / total) * 100)}%;background:{remaining < 15 ? 'var(--error)' : remaining < 30 ? 'var(--warning)' : 'var(--primary)'}"></div>
+          <div class="countdown-bar" class:warn={remaining >= 15 && remaining < 30} class:urgent={remaining < 15}
+            style="width:{Math.min(100, (remaining / total) * 100)}%"></div>
           <span class="countdown-text" class:countdown-urgent={remaining < 15}>
             {remaining > 0 ? `未处理将在 ${remaining}s 后自动拒绝` : '已超时，等待客户端核心确认…'}
           </span>
@@ -85,7 +86,7 @@
         <button class="auth-btn always-deny" disabled={!!busyId} onclick={() => decide('always_deny')}>始终拒绝</button>
         <button class="auth-btn deny" disabled={!!busyId} onclick={() => decide('deny_once')}>拒绝</button>
       </div>
-      <p class="inline-note" style="text-align:center">「允许」「拒绝」仅在 10 分钟内有效；「始终」会创建永久规则，可在「防御」中管理。</p>
+      <p class="inline-note text-center">「允许」「拒绝」仅在 10 分钟内有效；「始终」会创建永久规则，可在「防御」中管理。</p>
     </div>
   </div>
 {/if}

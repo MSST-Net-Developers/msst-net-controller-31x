@@ -6,6 +6,7 @@
   import { formatBytes, validHandle } from '$lib/util';
   import LogDialog from '$lib/dialogs/LogDialog.svelte';
   import type { EndpointInfo, NetSettings, PathViewEntry, RelayList, TrafficEntry } from '$lib/types';
+  import Icon from '$lib/icons';
 
   const health = $derived(controller.health);
   const ready = $derived(controller.coreReady);
@@ -279,7 +280,7 @@
         <p class="settings-hint">显示名将展示给房间内的其他成员；助记符只能包含小写字母、数字和横杠，用于在规则中引用</p>
       </div>
       <div class="divider-gradient"></div>
-      {#if !ready}<p class="settings-hint" style="color:var(--warning)">⚠ 客户端核心未就绪，暂不可编辑</p>{/if}
+      {#if !ready}<p class="settings-hint is-warning"><Icon icon="mdi:alert-outline" width={14} height={14} />客户端核心未就绪，暂不可编辑</p>{/if}
       <div class="settings-fields">
         <label class="field"><span>设备名</span>
           <input type="text" bind:value={deviceName} placeholder="请输入设备名" disabled={!ready} /></label>
@@ -287,7 +288,7 @@
           <input type="text" bind:value={deviceHandle} placeholder="如：alice-laptop" disabled={!ready} /></label>
       </div>
       {#if health}
-        <p class="inline-note" style="user-select:text">设备 ID：{health.device_id ?? '—'}　用户 ID：{health.user_id ?? '—'}</p>
+        <p class="inline-note selectable">设备 ID：{health.device_id ?? '—'}　用户 ID：{health.user_id ?? '—'}</p>
       {/if}
       {#if saveError}<p class="inline-error">{saveError}</p>{/if}
       <div class="settings-actions">
@@ -334,7 +335,7 @@
       </div>
       <div class="divider-gradient"></div>
 
-      <div class="adv-mono-block" style="user-select:text">
+      <div class="adv-mono-block">
         <div>控制器 ↔ 客户端核心：<strong>{connLabel()}</strong></div>
         <div>协议版本：控制器 {conn?.controller_protocol ?? '—'} / 客户端核心 {conn?.core_protocol ?? '—'}</div>
         <div>协调服务器：{health?.ws_connected == null ? '未知' : health.ws_connected ? '已连接' : '未连接'}　虚拟网卡：{health?.tun_ready == null ? '未知' : health.tun_ready ? '就绪' : '未就绪'}　中转：{health?.relay ?? '—'}</div>
@@ -342,7 +343,7 @@
         {#if conn?.diagnostics.last_error}<div>最近错误：{conn.diagnostics.last_error}</div>{/if}
       </div>
 
-      <div class="settings-actions" style="gap:8px;margin-top:8px">
+      <div class="settings-actions">
         <button class="save-btn outline-btn" onclick={reRegister} disabled={!ready || reRegisterState === 'busy'}>
           {reRegisterState === 'busy' ? '注册中…' : reRegisterState === 'done' ? '✓ 已重新注册' : '重新注册'}
         </button>
@@ -350,11 +351,11 @@
       </div>
       {#if reRegisterError}<p class="inline-error">重新注册失败：{reRegisterError}</p>{/if}
 
-      <div class="divider-gradient" style="margin-top:12px"></div>
+      <div class="divider-gradient"></div>
       <div class="adv-toggle" role="button" tabindex="0" onclick={toggleAdvanced}
         onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleAdvanced()}>
         <span class="adv-toggle-label">高级选项</span>
-        <span class="adv-toggle-arrow">{advanced ? '▲' : '▼'}</span>
+        <span class="adv-toggle-arrow"><Icon icon={advanced ? 'mdi:chevron-up' : 'mdi:chevron-down'} width={18} height={18} /></span>
       </div>
 
       {#if advanced}
@@ -363,7 +364,7 @@
 
           <div class="adv-section">
             <div class="adv-section-hdr" role="button" tabindex="0" onclick={() => toggleSection('path')}
-              onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('path')}><span>路径选择</span><span>{openSection.path ? '▲' : '▼'}</span></div>
+              onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('path')}><span>路径选择</span><span class="adv-section-arrow"><Icon icon={openSection.path ? 'mdi:chevron-up' : 'mdi:chevron-down'} width={18} height={18} /></span></div>
             {#if openSection.path}
               <div class="adv-section-body">
                 {#if settings}
@@ -386,7 +387,7 @@
                   <div class="adv-field-group">
                     <span class="adv-field-label">中转服务器偏好（重新连接协调服务器后生效）</span>
                     {#if relaysError}
-                      <small class="adv-hint" style="color:var(--error)">中转列表读取失败：{relaysError}</small>
+                      <small class="adv-hint is-error">中转列表读取失败：{relaysError}</small>
                     {:else if !relays}
                       <small class="adv-hint">（加载中…）</small>
                     {:else}
@@ -409,7 +410,7 @@
                 {/if}
                 <div class="adv-field-group">
                   <span class="adv-field-label">路径视图（只读）</span>
-                  {#if sectionError.path}<small class="adv-hint" style="color:var(--error)">{sectionError.path}</small>{/if}
+                  {#if sectionError.path}<small class="adv-hint is-error">{sectionError.path}</small>{/if}
                   {#if pathView.length === 0}
                     <small class="adv-hint">暂无路径数据</small>
                   {:else}
@@ -432,7 +433,7 @@
 
           <div class="adv-section">
             <div class="adv-section-hdr" role="button" tabindex="0" onclick={() => toggleSection('trans')}
-              onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('trans')}><span>网络传输</span><span>{openSection.trans ? '▲' : '▼'}</span></div>
+              onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('trans')}><span>网络传输</span><span class="adv-section-arrow"><Icon icon={openSection.trans ? 'mdi:chevron-up' : 'mdi:chevron-down'} width={18} height={18} /></span></div>
             {#if openSection.trans}
               <div class="adv-section-body">
                 {#if settings}
@@ -458,19 +459,19 @@
                           onchange={() => patch({ linux_dns_mode: 'prefer_split' })} />
                         <span>优先使用 DNS 分流（默认）</span>
                       </label>
-                      <small class="adv-hint" style="margin-left:20px">优先通过 systemd-resolved 配置，不可用时自动切换为 DNS 拦截</small>
+                      <small class="adv-hint indent">优先通过 systemd-resolved 配置，不可用时自动切换为 DNS 拦截</small>
                       <label class="adv-radio">
                         <input type="radio" name="dns" checked={settings.linux_dns_mode === 'iptables_only'} disabled={settingsBusy}
                           onchange={() => patch({ linux_dns_mode: 'iptables_only' })} />
                         <span>仅使用 DNS 拦截</span>
                       </label>
-                      <small class="adv-hint" style="margin-left:20px">仅使用 iptables 配置 DNS 拦截规则，跳过 systemd-resolved</small>
+                      <small class="adv-hint indent">仅使用 iptables 配置 DNS 拦截规则，跳过 systemd-resolved</small>
                     </div>
                   </div>
                 {/if}
                 <div class="adv-field-group">
-                  <span class="adv-field-label">流量计数（路径切换时自动重置）<button class="mini-btn" style="margin-left:8px" onclick={loadTraffic}>刷新</button></span>
-                  {#if sectionError.traffic}<small class="adv-hint" style="color:var(--error)">{sectionError.traffic}</small>{/if}
+                  <span class="adv-field-label">流量计数（路径切换时自动重置）<button class="mini-btn" onclick={loadTraffic}>刷新</button></span>
+                  {#if sectionError.traffic}<small class="adv-hint is-error">{sectionError.traffic}</small>{/if}
                   {#if traffic.length === 0}
                     <small class="adv-hint">暂无流量数据</small>
                   {:else}
@@ -490,10 +491,10 @@
 
           <div class="adv-section">
             <div class="adv-section-hdr" role="button" tabindex="0" onclick={() => toggleSection('ep')}
-              onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('ep')}><span>穿透控制</span><span>{openSection.ep ? '▲' : '▼'}</span></div>
+              onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('ep')}><span>穿透控制</span><span class="adv-section-arrow"><Icon icon={openSection.ep ? 'mdi:chevron-up' : 'mdi:chevron-down'} width={18} height={18} /></span></div>
             {#if openSection.ep}
               <div class="adv-section-body">
-                {#if sectionError.endpoints}<small class="adv-hint" style="color:var(--error)">{sectionError.endpoints}</small>{/if}
+                {#if sectionError.endpoints}<small class="adv-hint is-error">{sectionError.endpoints}</small>{/if}
                 <div class="adv-field-group">
                   <span class="adv-field-label">当前端点</span>
                   {#if !endpoints || endpoints.current.length === 0}
@@ -526,7 +527,7 @@
                     </div>
                   </div>
                 {/if}
-                <div class="settings-actions" style="justify-content:flex-end;margin-top:4px;gap:8px">
+                <div class="settings-actions">
                   {#if refreshEpState}<small class="adv-hint">{refreshEpState}</small>{/if}
                   <button class="save-btn outline-btn" onclick={refreshEndpoint} disabled={!ready}>强制刷新端点</button>
                 </div>
@@ -536,27 +537,27 @@
 
           <div class="adv-section">
             <div class="adv-section-hdr" role="button" tabindex="0" onclick={() => toggleSection('diag')}
-              onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('diag')}><span>其他诊断工具</span><span>{openSection.diag ? '▲' : '▼'}</span></div>
+              onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleSection('diag')}><span>其他诊断工具</span><span class="adv-section-arrow"><Icon icon={openSection.diag ? 'mdi:chevron-up' : 'mdi:chevron-down'} width={18} height={18} /></span></div>
             {#if openSection.diag}
               <div class="adv-section-body">
                 <div class="adv-field-group">
                   <span class="adv-field-label">Ping 节点</span>
-                  <div class="input-row" style="margin-top:4px">
+                  <div class="input-row">
                     <input type="text" class="input-grow" bind:value={pingTarget} list="ping-peers" placeholder="目标设备 ID" disabled={pingRunning} />
                     <datalist id="ping-peers">
                       {#each peers as p (p.device_id)}<option value={p.device_id}>{p.display_name ?? p.device_id}</option>{/each}
                     </datalist>
                     <button class="mini-btn" onclick={startPing} disabled={!pingTarget.trim() || pingRunning || !ready}>{pingRunning ? '进行中…' : '开始'}</button>
                   </div>
-                  {#if pingError}<small class="adv-hint" style="color:var(--error)">{pingError}</small>{/if}
+                  {#if pingError}<small class="adv-hint is-error">{pingError}</small>{/if}
                   {#if pingResults.length > 0}
                     {@const recv = pingResults.filter((r) => r != null).length}
                     {@const rtts = pingResults.filter((r): r is number => r != null)}
                     {@const avg = rtts.length > 0 ? rtts.reduce((a, b) => a + b, 0) / rtts.length : null}
-                    <div class="adv-mono-block" style="margin-top:6px">
+                    <div class="adv-mono-block">
                       <div>发送 {pingResults.length} / 收到 {recv} / 丢失 {pingResults.length - recv}{avg != null ? ` / 平均 RTT ${avg.toFixed(1)} ms` : ''}</div>
                       <div class="mono adv-mono-row">{pingResults.map((r, i) => `#${i + 1}: ${r != null ? r.toFixed(1) + ' ms' : '超时'}`).join('  ')}</div>
-                      {#if !pingDone}<div class="adv-hint" style="color:var(--primary)">进行中…</div>{/if}
+                      {#if !pingDone}<div class="adv-hint is-progress">进行中…</div>{/if}
                     </div>
                   {/if}
                 </div>

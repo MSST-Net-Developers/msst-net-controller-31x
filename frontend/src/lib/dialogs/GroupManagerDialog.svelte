@@ -79,7 +79,7 @@
 <Modal {onclose} wide busy={busy}>
   <h2 class="modal-title">权限组管理</h2>
   {#if groups.length === 0}
-    <p style="text-align:center;color:var(--text-muted);font-size:var(--font-sm)">暂无权限组</p>
+    <p class="modal-empty">暂无权限组</p>
   {:else}
     <div class="group-list">
       {#each groups as g (g.id)}
@@ -135,7 +135,7 @@
   {:else}
     <div class="modal-actions">
       <button class="modal-btn cancel" onclick={onclose}>关闭</button>
-      <button class="modal-btn confirm" onclick={openNew} disabled={!controller.connected}>＋ 新建分组</button>
+      <button class="modal-btn confirm" onclick={openNew} disabled={!controller.connected}><Icon icon="mdi:plus" width={16} height={16} />新建分组</button>
     </div>
   {/if}
 </Modal>

@@ -67,7 +67,7 @@
   </div>
   {#if error}<p class="modal-error">{error}</p>{/if}
   {#if note}<p class="inline-note">{note}</p>{/if}
-  <div class="log-box" style="user-select:text">
+  <div class="log-box">
     {#each filtered as e, i (i)}
       <div class="log-line log-level-{e.level.toLowerCase()}">
         <span class="log-ts">{new Date(e.timestamp_ms).toISOString().replace('T', ' ').replace('Z', '')}</span>

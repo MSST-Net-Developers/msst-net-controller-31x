@@ -7,6 +7,7 @@
   import { R } from '$lib/api/requests';
   import { controller } from '$lib/controller.svelte';
   import type { DnsRecord, NamespaceRegistration } from '$lib/types';
+  import Icon from '$lib/icons';
 
   type Phase = 'idle' | 'submitting' | 'success' | 'error';
 
@@ -174,17 +175,17 @@
 <div class="dns-page">
   <div class="dns-header">
     <div>
-      <h2 class="dns-title">🌐 .msst.net 命名空间管理</h2>
+      <h2 class="dns-title">.msst.net 命名空间管理</h2>
       <p class="dns-subtitle">注册命名空间后，可在 <strong>*.&lt;namespace&gt;.msst.net</strong> 下添加 CNAME / TXT / SRV 记录。</p>
     </div>
     <button class="dns-register-btn" disabled={!authenticated || !controller.connected}
-      onclick={() => { newNs = ''; newReason = ''; regPhase = 'idle'; regError = ''; showRegister = true; }}>＋ 申请命名空间</button>
+      onclick={() => { newNs = ''; newReason = ''; regPhase = 'idle'; regError = ''; showRegister = true; }}><Icon icon="mdi:plus" width={15} height={15} />申请命名空间</button>
   </div>
 
   {#if !authenticated}
     <div class="dns-empty">
       <p>域名管理需要先完成 MSST 接入认证</p>
-      <p class="dns-empty-hint">请在首页右下角点击 👤 完成接入认证</p>
+      <p class="dns-empty-hint">请点击首页右下角的「接入认证」按钮完成认证</p>
     </div>
   {:else if loading}
     <p class="dns-loading">加载中…</p>
@@ -206,7 +207,7 @@
           {#if ns.reason}<p class="dns-reason">申请理由：{ns.reason}</p>{/if}
           {#if ns.status === 'rejected' && ns.reject_reason}<p class="dns-reject-reason">拒绝原因：{ns.reject_reason}</p>{/if}
           {#if ns.status === 'approved'}
-            <button class="dns-manage-btn" onclick={() => openRecords(ns.namespace)}>{active === ns.namespace ? '▾ 管理记录' : '▸ 管理记录'}</button>
+            <button class="dns-manage-btn" onclick={() => openRecords(ns.namespace)}><Icon icon={active === ns.namespace ? 'mdi:chevron-down' : 'mdi:chevron-right'} width={16} height={16} />管理记录</button>
           {/if}
         </div>
 
@@ -214,7 +215,7 @@
           <div class="dns-records-panel">
             <div class="dns-records-header">
               <span class="dns-records-title">DNS 记录 — *.{ns.namespace}.msst.net</span>
-              <button class="dns-add-btn" onclick={openAdd}>＋ 添加记录</button>
+              <button class="dns-add-btn" onclick={openAdd}><Icon icon="mdi:plus" width={14} height={14} />添加记录</button>
             </div>
             {#if recordsError}<p class="dns-error">{recordsError}</p>{/if}
             {#if recordsLoading}

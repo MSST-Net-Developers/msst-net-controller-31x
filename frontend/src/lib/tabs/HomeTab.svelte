@@ -82,7 +82,7 @@
           {@const self = peer.device_id === health?.device_id}
           {@const path = self ? null : pathLabel(nodes[peer.device_id]?.path_mode ?? null)}
           <li class="peer-card">
-            <div class="peer-icon">⬡</div>
+            <div class="peer-icon"><Icon icon="mdi:monitor" width={18} height={18} /></div>
             <div class="peer-info">
               <span class="peer-name">{peer.display_name ?? peer.device_id}{self ? '（本机）' : ''}</span>
               {#if peer.display_name}<span class="peer-device-id">{peer.device_id}</span>{/if}
@@ -114,20 +114,20 @@
     <div class="action-area">
       <div class="mode-group">
         <div class="mode-group-hdr">
-          <span class="mode-group-icon">🚪</span>
+          <span class="mode-group-icon"><Icon icon="mdi:account-multiple-outline" width={18} height={18} /></span>
           <span class="mode-group-title">使用房间模式（推荐）</span>
         </div>
         {#if health && !health.is_authenticated && controller.coreReady}
-          <p class="mode-group-notice">ℹ️ 当前以免认证身份接入，仅可使用房间模式。</p>
+          <p class="mode-group-notice"><Icon icon="mdi:information-outline" width={14} height={14} />当前以免认证身份接入，仅可使用房间模式。</p>
         {/if}
         <div class="btn-group">
-          <button class="action-btn primary" style={controller.coreReady ? '' : 'opacity:0.45;cursor:not-allowed;'}
+          <button class="action-btn primary" class:unavailable={!controller.coreReady}
             onclick={() => requireCore(() => (showCreate = true))}>
-            <span class="btn-icon">＋</span>创建房间
+            <span class="btn-icon"><Icon icon="mdi:plus" width={22} height={22} /></span>创建房间
           </button>
-          <button class="action-btn secondary" style={controller.coreReady ? '' : 'opacity:0.45;cursor:not-allowed;'}
+          <button class="action-btn secondary" class:unavailable={!controller.coreReady}
             onclick={() => requireCore(() => (showJoin = true))}>
-            <span class="btn-icon">→</span>加入房间
+            <span class="btn-icon"><Icon icon="mdi:login" width={22} height={22} /></span>加入房间
           </button>
         </div>
       </div>
@@ -135,7 +135,7 @@
       {#if health?.is_authenticated}
         <div class="mode-group mode-group-lan">
           <div class="mode-group-hdr">
-            <span class="mode-group-icon">🌐</span>
+            <span class="mode-group-icon"><Icon icon="mdi:lan" width={18} height={18} /></span>
             <span class="mode-group-title mode-group-title-lan">使用大内网模式</span>
           </div>
           <div class="lan-section">
@@ -179,7 +179,7 @@
         <p class="core-unavailable-hint">客户端核心未就绪，无法创建或加入房间</p>
       {/if}
       <!-- svelte-ignore a11y_invalid_attribute -->
-      <a href="#" class="home-docs-link" onclick={(e) => { e.preventDefault(); openExternal('https://msst-net.msst2031.cn'); }}>📖 项目官网 · 使用说明</a>
+      <a href="#" class="home-docs-link" onclick={(e) => { e.preventDefault(); openExternal('https://msst-net.msst2031.cn'); }}><Icon icon="mdi:book-open-outline" width={14} height={14} />项目官网 · 使用说明</a>
     </div>
     <footer class="status-bar">
       <span class="status-label">客户端核心状态：</span>
@@ -187,7 +187,7 @@
       <span class="status-text {controller.status}">{controller.statusLabel}</span>
       <button class="refresh-btn" onclick={() => controller.refresh()} title="立即刷新"><Icon icon="mdi:refresh" width={17} height={17} /></button>
     </footer>
-    <button class="auth-fab" onclick={() => (showAuth = true)} title="接入认证">👤</button>
+    <button class="auth-fab" onclick={() => (showAuth = true)} title="接入认证" aria-label="接入认证"><Icon icon="mdi:account-key-outline" width={22} height={22} /></button>
   </div>
 {/if}
 

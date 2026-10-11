@@ -1,16 +1,14 @@
 <script lang="ts">
   import { openExternal } from '$lib/api/client';
   import { controller } from '$lib/controller.svelte';
+  import Icon from '$lib/icons';
+  import Logo from '$lib/components/Logo.svelte';
 </script>
 
 <div class="about-page">
   <div class="about-card">
     <div class="app-logo">
-      <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
-        <circle cx="32" cy="32" r="30" stroke="#29b6f6" stroke-width="3" fill="#e1f5fe" />
-        <path d="M16 32 Q24 20 32 32 Q40 44 48 32" stroke="#0288d1" stroke-width="2.5" fill="none" stroke-linecap="round" />
-        <circle cx="32" cy="32" r="4" fill="#0288d1" />
-      </svg>
+      <Logo size={64} />
     </div>
     <h1 class="app-name">MSST-Net 控制器</h1>
     <div class="version-row">
@@ -29,9 +27,9 @@
     <p class="slogan sub">虽是远在天边，犹如近在眼前</p>
     <div class="about-links">
       <!-- svelte-ignore a11y_invalid_attribute -->
-      <a href="#" class="about-link" onclick={(e) => { e.preventDefault(); openExternal('https://msst-net.msst2031.cn'); }}>🌐 官方网站（含使用说明）</a>
+      <a href="#" class="about-link" onclick={(e) => { e.preventDefault(); openExternal('https://msst-net.msst2031.cn'); }}><Icon icon="mdi:web" width={16} height={16} />官方网站（含使用说明）</a>
       <!-- svelte-ignore a11y_invalid_attribute -->
-      <a href="#" class="about-link" onclick={(e) => { e.preventDefault(); openExternal('https://github.com/MSST-Net-Developers'); }}>⌨ GitHub</a>
+      <a href="#" class="about-link" onclick={(e) => { e.preventDefault(); openExternal('https://github.com/MSST-Net-Developers'); }}><Icon icon="mdi:github" width={16} height={16} />GitHub</a>
     </div>
   </footer>
 </div>

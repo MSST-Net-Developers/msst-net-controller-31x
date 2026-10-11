@@ -1,5 +1,6 @@
 <script lang="ts">
   import { webui, errorMessage } from '$lib/api/client';
+  import Logo from '$lib/components/Logo.svelte';
 
   let { onlogin }: { onlogin: () => void } = $props();
 
@@ -25,7 +26,7 @@
 
 <div class="login-page">
   <div class="login-card">
-    <div class="login-logo">⚡</div>
+    <div class="login-logo"><Logo size={48} /></div>
     <h1 class="login-title">MSST-Net WebUI</h1>
     <p class="login-sub">请输入访问密码</p>
     {#if error}<p class="login-error">{error}</p>{/if}

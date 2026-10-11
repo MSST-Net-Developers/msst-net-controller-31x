@@ -97,7 +97,7 @@
 
 <Modal onclose={cancel} cls="auth-modal" busy={flow === 'starting'}>
   <div class="auth-modal-icon" class:auth-icon-success={flow === 'authorized'} class:auth-icon-error={flow === 'error'}>
-    {#if flow === 'authorized'}✅{:else if flow === 'error'}⚠️{:else}🔑{/if}
+    <Icon icon={flow === 'authorized' ? 'mdi:check-circle-outline' : flow === 'error' ? 'mdi:alert-circle-outline' : 'mdi:key-outline'} width={36} height={36} />
   </div>
   <h2 class="modal-title">接入认证</h2>
   {#if flow !== 'error'}
@@ -115,7 +115,7 @@
   {#if flow === 'idle'}
     {#if health?.is_authenticated}
       <div class="auth-current-user">
-        <div class="auth-current-avatar">✓</div>
+        <div class="auth-current-avatar"><Icon icon="mdi:account-check-outline" width={20} height={20} /></div>
         <div class="auth-current-info">
           <span class="auth-current-name">{health.user_display_name || '已认证用户'}</span>
           <span class="auth-current-id">{health.user_id ?? ''}</span>
@@ -171,7 +171,7 @@
       <button class="modal-btn cancel" onclick={cancel}>取消</button>
     </div>
   {:else if flow === 'authorized'}
-    <div class="auth-success-icon">✓</div>
+    <div class="auth-success-icon"><Icon icon="mdi:check-circle" width={40} height={40} /></div>
     <p class="auth-hint auth-success">认证成功！</p>
   {:else if flow === 'error'}
     <p class="auth-hint auth-error">认证失败：{error}</p>

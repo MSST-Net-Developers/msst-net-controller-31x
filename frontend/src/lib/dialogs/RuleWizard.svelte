@@ -9,6 +9,7 @@
   import { controller } from '$lib/controller.svelte';
   import { validPortExpr } from '$lib/util';
   import type { FirewallRule, ServiceCategory } from '$lib/types';
+  import Icon from '$lib/icons';
 
   let { onclose, from = null }: { onclose: () => void; from?: FirewallRule | null } = $props();
 
@@ -142,11 +143,11 @@
     <h2 class="modal-title">{from ? '复制为新规则' : '新建防火墙规则'}</h2>
     <div class="wizard-steps">
       <div class="wstep" class:wstep-active={step === 1} class:wstep-done={step > 1}>
-        <span class="wstep-num">{step > 1 ? '✓' : '1'}</span><span class="wstep-label">来源匹配</span>
+        <span class="wstep-num">{#if step > 1}<Icon icon="mdi:check" width={14} height={14} />{:else}1{/if}</span><span class="wstep-label">来源匹配</span>
       </div>
       <div class="wstep-line" class:wstep-line-done={step > 1}></div>
       <div class="wstep" class:wstep-active={step === 2} class:wstep-done={step > 2}>
-        <span class="wstep-num">{step > 2 ? '✓' : '2'}</span><span class="wstep-label">目标匹配</span>
+        <span class="wstep-num">{#if step > 2}<Icon icon="mdi:check" width={14} height={14} />{:else}2{/if}</span><span class="wstep-label">目标匹配</span>
       </div>
       <div class="wstep-line" class:wstep-line-done={step > 2}></div>
       <div class="wstep" class:wstep-active={step === 3}>
@@ -174,7 +175,7 @@
       </div>
 
       {#if srcMode === 'group'}
-        <label class="field" style="margin-top:12px">
+        <label class="field mt-md">
           <span>权限组</span>
           <select bind:value={selectedGroupId} class="select-input">
             <option value="">— 选择权限组 —</option>
@@ -184,9 +185,9 @@
         {#if groups.length === 0}<p class="step-hint">暂无权限组，请先在「权限组管理」中创建</p>{/if}
         <p class="inline-note">规则创建时会复制权限组的当前成员；之后修改权限组不会改变此规则。</p>
       {:else if srcMode === 'space'}
-        <p class="step-hint" style="margin-top:12px">规则将自动匹配当前加入的所有房间成员，无需手动指定。</p>
+        <p class="step-hint mt-md">规则将自动匹配当前加入的所有房间成员，无需手动指定。</p>
       {:else}
-        <div style="margin-top:12px">
+        <div class="mt-md">
           <label class="field">
             <span>来源类型（列表中所有来源必须相同）</span>
             <select bind:value={srcKind} class="select-input" onchange={() => (srcItems = [])}>
@@ -194,14 +195,14 @@
               <option value="user">用户</option>
             </select>
           </label>
-          <div class="input-row" style="margin-top:8px">
+          <div class="input-row mt-sm">
             <input type="text" bind:value={srcInput} placeholder="输入助记符或 ID" class="input-grow"
               onkeydown={(e) => e.key === 'Enter' && addSrc()} />
             <button class="mini-btn" onclick={addSrc}>添加</button>
           </div>
           {#if lookup}<p class="lookup-hint">→ {lookup}</p>{/if}
           {#if srcItems.length > 0}
-            <div class="tag-list" style="margin-top:6px">
+            <div class="tag-list mt-sm">
               {#each srcItems as item (item.id)}
                 <span class="tag">{item.kind === 'device' ? '设备' : '用户'}:{item.id}
                   <button class="tag-del" onclick={() => (srcItems = srcItems.filter((i) => i.id !== item.id))}>×</button></span>
@@ -227,7 +228,7 @@
       </div>
 
       {#if targetMode === 'simple'}
-        <div class="field" style="margin-top:12px">
+        <div class="field mt-md">
           <span>服务类型（可多选）</span>
           {#if servicesError}<p class="inline-error">{servicesError}</p>{/if}
           <div class="services-scroll">
@@ -255,16 +256,16 @@
           </div>
         </div>
       {:else}
-        <div style="margin-top:12px">
+        <div class="mt-md">
           <div class="form-row">
-            <label class="field" style="flex:0 0 110px"><span>协议</span>
+            <label class="field field-proto"><span>协议</span>
               <select bind:value={advProto} class="select-input">
                 <option value="tcp+udp">TCP+UDP</option>
                 <option value="tcp">TCP</option>
                 <option value="udp">UDP</option>
               </select>
             </label>
-            <label class="field" style="flex:1"><span>端口（* / 80 / 80-443）</span>
+            <label class="field field-grow"><span>端口（* / 80 / 80-443）</span>
               <div class="input-row">
                 <input type="text" bind:value={advPort} placeholder="如：25565" class="input-grow" onkeydown={(e) => e.key === 'Enter' && addPort()} />
                 <button class="mini-btn" onclick={addPort}>添加</button>
@@ -272,7 +273,7 @@
             </label>
           </div>
           {#if advList.length > 0}
-            <div class="tag-list" style="margin-top:6px">
+            <div class="tag-list mt-sm">
               {#each advList as pp (pp.proto + pp.port)}
                 <span class="tag">{pp.proto}/{pp.port}
                   <button class="tag-del" onclick={() => (advList = advList.filter((x) => !(x.proto === pp.proto && x.port === pp.port)))}>×</button></span>
@@ -295,7 +296,7 @@
           <div class="src-card-body"><span class="src-card-title src-card-title-deny">拒绝</span><span class="src-card-desc">拦截匹配此规则的流量</span></div>
         </label>
       </div>
-      <label class="field" style="margin-top:16px">
+      <label class="field mt-md">
         <span>备注（可选）</span>
         <input type="text" bind:value={comment} placeholder="规则用途说明，如：允许朋友访问游戏服务器" class="select-input" />
       </label>

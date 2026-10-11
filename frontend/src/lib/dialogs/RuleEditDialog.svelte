@@ -42,7 +42,7 @@
     <span>{rule.action === 'allow' ? '允许' : '拒绝'}{rule.expires_at ? `（有效期至 ${new Date(rule.expires_at * 1000).toLocaleString()}）` : ''}</span>
   </div>
   <p class="inline-note">客户端核心目前只支持修改规则的备注和启用状态。如需修改来源、端口或动作，请「复制为新规则」后删除旧规则。</p>
-  <label class="field" style="margin-top:12px">
+  <label class="field mt-md">
     <span>备注</span>
     <input type="text" bind:value={comment} class="select-input" disabled={busy} />
   </label>

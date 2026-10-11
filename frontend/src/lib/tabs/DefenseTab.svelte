@@ -155,16 +155,16 @@
       <span class="toggle-knob"></span>
     </label>
 
-    <button class="tool-btn" onclick={() => (showGroups = true)}>👥 权限组管理</button>
+    <button class="tool-btn" onclick={() => (showGroups = true)}><Icon icon="mdi:account-group-outline" width={15} height={15} />权限组管理</button>
     <button class="tool-btn" class:active={sub === 'access-log'}
       onclick={() => { sub = sub === 'access-log' ? 'rules' : 'access-log'; if (sub === 'access-log') loadLog(); }}>
-      📋 访问记录
+      <Icon icon="mdi:history" width={15} height={15} />访问记录
     </button>
 
     <div class="toolbar-spacer"></div>
 
     {#if sub === 'rules'}
-      <button class="tool-btn primary" onclick={() => (wizard = { from: null })} disabled={!controller.connected}>＋ 新建规则</button>
+      <button class="tool-btn primary" onclick={() => (wizard = { from: null })} disabled={!controller.connected}><Icon icon="mdi:plus" width={15} height={15} />新建规则</button>
       <button class="tool-btn danger" onclick={clearAll} disabled={rules.length === 0 || clearing || !controller.connected}>
         <Icon icon="mdi:trash-can-outline" width={14} height={14} /> {clearing ? '清空中…' : '清空'}
       </button>
@@ -176,7 +176,7 @@
     {/if}
   </div>
 
-  {#if error}<p class="inline-error" style="margin:0 var(--space-md)">{error}</p>{/if}
+  {#if error}<p class="inline-error defense-error">{error}</p>{/if}
 
   {#if sub === 'rules'}
     <div class="rules-container">
@@ -220,7 +220,7 @@
     </div>
   {:else}
     <div class="access-log-container">
-      {#if logError}<div class="rules-empty" style="color:var(--error)">{logError}</div>{/if}
+      {#if logError}<div class="rules-empty is-error">{logError}</div>{/if}
       {#if log.length === 0 && !logError}
         <div class="rules-empty">{logLoading ? '加载中…' : '暂无访问记录'}</div>
       {/if}

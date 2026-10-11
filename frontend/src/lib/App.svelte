@@ -3,7 +3,9 @@
   import { isTauri, webui } from '$lib/api/client';
   import { controller } from '$lib/controller.svelte';
   import { copyText } from '$lib/util';
+  import Icon from '$lib/icons';
   import CoreBanner from '$lib/components/CoreBanner.svelte';
+  import Logo from '$lib/components/Logo.svelte';
   import AccessRequestDialog from '$lib/dialogs/AccessRequestDialog.svelte';
   import HomeTab from '$lib/tabs/HomeTab.svelte';
   import DefenseTab from '$lib/tabs/DefenseTab.svelte';
@@ -48,14 +50,14 @@
   <nav class="tabs">
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="tab-logo" onmousedown={() => win('drag')}>
-      <span class="tab-logo-icon">⚡</span>
+      <Logo size={22} />
       <span class="tab-logo-text">MSST-Net</span>
     </div>
-    <button class="tab-btn" class:active={tab === 'home'} onclick={() => (tab = 'home')}><span class="tab-icon">🏠</span><span class="tab-text">首页</span></button>
-    <button class="tab-btn" class:active={tab === 'defense'} onclick={() => (tab = 'defense')}><span class="tab-icon">🛡️</span><span class="tab-text">防御</span></button>
-    <button class="tab-btn" class:active={tab === 'settings'} onclick={() => (tab = 'settings')}><span class="tab-icon">⚙️</span><span class="tab-text">设置</span></button>
-    <button class="tab-btn" class:active={tab === 'about'} onclick={() => (tab = 'about')}><span class="tab-icon">ℹ️</span><span class="tab-text">关于</span></button>
-    <button class="tab-btn" class:active={tab === 'dns'} onclick={() => (tab = 'dns')}><span class="tab-icon">🌐</span><span class="tab-text">域名</span></button>
+    <button class="tab-btn" class:active={tab === 'home'} onclick={() => (tab = 'home')}><span class="tab-icon"><Icon icon="mdi:home-outline" width={18} height={18} /></span>首页</button>
+    <button class="tab-btn" class:active={tab === 'defense'} onclick={() => (tab = 'defense')}><span class="tab-icon"><Icon icon="mdi:shield-outline" width={18} height={18} /></span>防御</button>
+    <button class="tab-btn" class:active={tab === 'settings'} onclick={() => (tab = 'settings')}><span class="tab-icon"><Icon icon="mdi:cog-outline" width={18} height={18} /></span>设置</button>
+    <button class="tab-btn" class:active={tab === 'about'} onclick={() => (tab = 'about')}><span class="tab-icon"><Icon icon="mdi:information-outline" width={18} height={18} /></span>关于</button>
+    <button class="tab-btn" class:active={tab === 'dns'} onclick={() => (tab = 'dns')}><span class="tab-icon"><Icon icon="mdi:web" width={18} height={18} /></span>域名</button>
 
     {#if isTauri}
       <div class="win-controls">
@@ -80,7 +82,7 @@
         onclick={async () => { roomIdCopied = await copyText(room.room_id!); setTimeout(() => (roomIdCopied = false), 2000); }}>
         {roomIdCopied ? '✓ 已复制' : room.room_id}
       </button>
-      {#if room.relay}<span class="inline-note" style="margin-left:8px">中转 {room.relay}</span>{/if}
+      {#if room.relay}<span class="room-banner-relay">中转 {room.relay}</span>{/if}
     </div>
   {/if}
 
