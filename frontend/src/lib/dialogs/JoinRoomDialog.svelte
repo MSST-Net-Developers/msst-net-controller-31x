@@ -2,6 +2,8 @@
   import Modal from '$lib/components/Modal.svelte';
   import { ipc, errorMessage } from '$lib/api/client';
   import { R } from '$lib/api/requests';
+  import { controller } from '$lib/controller.svelte';
+  import { operationStage } from '$lib/util';
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -9,6 +11,7 @@
   let password = $state('');
   let phase = $state<'idle' | 'submitting' | 'success' | 'error'>('idle');
   let error = $state('');
+  const stage = $derived(phase === 'submitting' ? operationStage(controller.view?.state, 'join_room') : null);
 
   async function submit() {
     if (!roomId.trim() || phase === 'submitting') return;
@@ -35,6 +38,7 @@
     <label class="field"><span>房间密码（可选）</span>
       <input type="password" bind:value={password} placeholder="无密码请留空" disabled={phase === 'submitting'}
         onkeydown={(e) => e.key === 'Enter' && submit()} /></label>
+    {#if stage}<p class="inline-note">{stage}…</p>{/if}
     {#if phase === 'error'}<p class="modal-error">{error}</p>{/if}
     <div class="modal-actions">
       <button class="modal-btn cancel" onclick={onclose} disabled={phase === 'submitting'}>取消</button>

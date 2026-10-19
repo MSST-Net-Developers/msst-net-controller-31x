@@ -314,6 +314,8 @@ fn is_valid_transition(from: &ConnectionStatus, to: &ConnectionStatus) -> bool {
         | (Reconnecting { .. }, Reconnecting { .. })
         // Version handshake rejected; retried slowly
         | (Connecting, Incompatible)
+        // Core rejected our version after the handshake (0.4 "handshake" frame)
+        | (Connected, Incompatible)
         | (Incompatible, Connecting)
     )
 }

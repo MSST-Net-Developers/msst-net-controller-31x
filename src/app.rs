@@ -54,6 +54,9 @@ impl App {
                     Ok(StateChange::EventApplied(event)) => {
                         tracing::debug!(?event, "IPC event applied");
                     }
+                    Ok(StateChange::OperationChanged(id)) => {
+                        tracing::debug!(%id, "Background operation updated");
+                    }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                         tracing::warn!(n, "State change subscriber lagged, events dropped");
                     }

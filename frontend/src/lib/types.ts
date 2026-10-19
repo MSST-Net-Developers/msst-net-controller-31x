@@ -48,6 +48,8 @@ export interface Health {
   ping_enabled: boolean | null;
   /** Protocol 0.3; null from older Cores. */
   access_auth_required: boolean | null;
+  /** This connection's permission tier (protocol 0.4; null from older Cores). */
+  ipc_role: 'viewer' | 'admin' | string | null;
 }
 
 export interface NodeInfo {
@@ -125,6 +127,17 @@ export interface SystemState {
   pending_auth: PendingAuthRequest[];
   /** Core needs MSST access authentication. */
   access_auth_required: boolean;
+  /** Recent background operations (protocol 0.4), by operation ID. */
+  operations: Record<string, OperationState>;
+}
+
+export interface OperationState {
+  /** e.g. `create_room`; null until known. */
+  request_type: string | null;
+  /** Last reported step, e.g. `relay_selected`. */
+  stage: string | null;
+  /** Set once the operation finished. */
+  result: { status: 'ok'; data: unknown } | { status: 'error'; data: { code: string; message: string } } | null;
 }
 
 export interface ControllerView {
@@ -132,7 +145,14 @@ export interface ControllerView {
   diagnostics: ConnectionDiagnostics;
   core_protocol: string | null;
   controller_protocol: string;
-  capabilities: { get_services: boolean; clear_acl_rules: boolean; full_events: boolean };
+  capabilities: {
+    get_services: boolean;
+    clear_acl_rules: boolean;
+    full_events: boolean;
+    event_seq: boolean;
+    operations: boolean;
+    log_stream: boolean;
+  };
   state: SystemState;
 }
 

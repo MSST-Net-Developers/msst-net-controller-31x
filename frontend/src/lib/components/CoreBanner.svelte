@@ -31,6 +31,12 @@
         };
       case v.state.access_auth_required && !v.state.health?.is_authenticated:
         return { kind: 'warn', text: 'MSST 接入认证未完成或已过期，请在首页右下角完成接入认证', detail: null };
+      case v.state.health?.ipc_role === 'viewer':
+        return {
+          kind: 'info',
+          text: '只读模式：当前账户可以查看状态，但不能进行更改。如需管理权限，请将该账户加入 msst-net 用户组（Windows：MSST-Net Administrators）后重新启动控制器',
+          detail: null,
+        };
       default:
         return null;
     }

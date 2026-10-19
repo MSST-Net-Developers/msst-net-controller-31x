@@ -18,13 +18,23 @@
 //! ([`StateStore::epoch`] → query → [`StateStore::apply_resource`]).
 //! A rejected result is re-queried by the caller.
 //!
+//! With protocol 0.4 Cores the check is exact instead: events carry `seq`
+//! and responses `event_seq` (the last event Core had emitted when it read
+//! the state).  A result is stale only if an event *newer* than its
+//! `event_seq` already touched the resource; events at or below it are
+//! already reflected, so they neither invalidate the result nor trigger a
+//! re-query.  Events are still applied (idempotently): one just above
+//! `event_seq` may or may not be reflected.  `seq` restarts with every Core
+//! run, so the bookkeeping is reset per session ([`StateStore::begin_session`]).
+//!
 //! The UI layer reads state through [`StateStore::snapshot`] and listens to
 //! [`StateStore::subscribe`]; it never mutates the store.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::Arc;
 
-use msst_ipc_protocol::IpcEvent;
+use msst_ipc_protocol::views::{OperationStatus, OperationView};
+use msst_ipc_protocol::{IpcEvent, IpcResponse};
 use serde_json::Value;
 use tokio::sync::{RwLock, broadcast};
 
@@ -42,6 +52,8 @@ pub enum StateChange {
     EventApplied(IpcEvent),
     /// The sync state changed.
     SyncChanged(SyncState),
+    /// A background operation was started or queried (not via an event).
+    OperationChanged(String),
 }
 
 // ── Parsed query results ─────────────────────────────────────────────────────
@@ -132,12 +144,39 @@ fn decode<T: serde::de::DeserializeOwned>(what: &str, v: Value) -> Result<T> {
 
 // ── StateStore ───────────────────────────────────────────────────────────────
 
+/// Operations kept in the view (running ones are evicted last).
+const MAX_OPERATIONS: usize = 32;
+
+#[derive(Default)]
 struct Inner {
     state: SystemState,
     epochs: HashMap<Resource, u64>,
     /// Core speaks protocol >= 0.3: `RoomStateChanged` / `NodeStateChanged`
     /// carry full state and can be applied directly.
     full_events: bool,
+    /// Highest event `seq` that touched each resource (this session).
+    event_seqs: HashMap<Resource, u64>,
+    /// `event_seq` of the query result each resource was last replaced with
+    /// (this session).
+    snapshot_seqs: HashMap<Resource, u64>,
+    /// IDs in `state.operations`, oldest first.
+    op_order: VecDeque<String>,
+}
+
+impl Inner {
+    fn operation_mut(&mut self, id: &str) -> &mut OperationState {
+        if !self.state.operations.contains_key(id) {
+            self.op_order.push_back(id.to_string());
+            while self.op_order.len() > MAX_OPERATIONS {
+                let ops = &self.state.operations;
+                let victim = self.op_order.iter().position(|i| ops.get(i).is_some_and(|o| o.result.is_some())).unwrap_or(0);
+                if let Some(old) = self.op_order.remove(victim) {
+                    self.state.operations.remove(&old);
+                }
+            }
+        }
+        self.state.operations.entry(id.to_string()).or_default()
+    }
 }
 
 /// Thread-safe state store with change subscription.
@@ -152,7 +191,7 @@ impl StateStore {
     pub fn new() -> Self {
         let (change_tx, _) = broadcast::channel(256);
         Self {
-            inner: Arc::new(RwLock::new(Inner { state: SystemState::default(), epochs: HashMap::new(), full_events: false })),
+            inner: Arc::new(RwLock::new(Inner::default())),
             change_tx,
         }
     }
@@ -161,6 +200,19 @@ impl StateStore {
     /// handshake); decides how partial events are handled.
     pub async fn set_protocol_minor(&self, minor: u32) {
         self.inner.write().await.full_events = minor >= 3;
+    }
+
+    /// Start of a new IPC session with a Core speaking protocol minor
+    /// `minor`.  Forgets the previous session's event positions (`seq`
+    /// restarts with Core) and its operations (their events may have been
+    /// missed; callers waiting for one re-query it with `GetOperation`).
+    pub async fn begin_session(&self, minor: u32) {
+        let mut inner = self.inner.write().await;
+        inner.full_events = minor >= 3;
+        inner.event_seqs.clear();
+        inner.snapshot_seqs.clear();
+        inner.op_order.clear();
+        inner.state.operations.clear();
     }
 
     /// The current epoch of `resource`; pass it to [`Self::apply_resource`].
@@ -172,10 +224,28 @@ impl StateStore {
     /// resource after `epoch` was read.  Returns `false` if the result was
     /// discarded as stale (the caller should query again).
     pub async fn apply_resource(&self, epoch: u64, data: ResourceData) -> bool {
+        self.apply_resource_at(epoch, data, None).await
+    }
+
+    /// [`Self::apply_resource`] for a result whose response carried
+    /// `event_seq` (protocol 0.4): stale only if an event newer than
+    /// `event_seq` touched the resource, or a newer result was applied.
+    /// Without `event_seq`, falls back to the epoch check.
+    pub async fn apply_resource_at(&self, epoch: u64, data: ResourceData, event_seq: Option<u64>) -> bool {
         let resource = data.resource();
         let mut inner = self.inner.write().await;
-        if inner.epochs.get(&resource).copied().unwrap_or(0) != epoch {
+        let fresh = match event_seq {
+            Some(at) => {
+                inner.event_seqs.get(&resource).is_none_or(|&s| s <= at)
+                    && inner.snapshot_seqs.get(&resource).is_none_or(|&s| s <= at)
+            }
+            None => inner.epochs.get(&resource).copied().unwrap_or(0) == epoch,
+        };
+        if !fresh {
             return false;
+        }
+        if let Some(at) = event_seq {
+            inner.snapshot_seqs.insert(resource, at);
         }
         let st = &mut inner.state;
         match data {
@@ -224,20 +294,80 @@ impl StateStore {
     /// Apply a push event.  Returns the resources that must be re-queried
     /// because the event does not carry the full new state.
     pub async fn apply_event(&self, event: &IpcEvent) -> Vec<Resource> {
+        self.apply_event_at(event, None).await
+    }
+
+    /// [`Self::apply_event`] for an event with `seq` (protocol 0.4).  The
+    /// caller has already dropped duplicates and detected gaps; here `seq`
+    /// only decides staleness and skips re-queries of resources whose last
+    /// query result already reflects the event.
+    pub async fn apply_event_at(&self, event: &IpcEvent, seq: Option<u64>) -> Vec<Resource> {
         // Log lines are not state; they are fetched on demand (GetLogs).
         if matches!(event, IpcEvent::Diagnostic { .. }) {
             return Vec::new();
         }
 
         let mut inner = self.inner.write().await;
-        let full = inner.full_events;
-        let (touched, refresh) = apply_event_to(&mut inner.state, event, full);
-        for r in touched {
-            *inner.epochs.entry(r).or_insert(0) += 1;
-        }
+        let refresh = match event {
+            IpcEvent::OperationProgress { operation_id, stage } => {
+                inner.operation_mut(operation_id).stage = Some(stage.clone());
+                Vec::new()
+            }
+            IpcEvent::OperationCompleted { operation_id, request_type, result } => {
+                let op = inner.operation_mut(operation_id);
+                op.request_type = Some(request_type.clone());
+                op.result = Some(result.clone());
+                Vec::new()
+            }
+            _ => {
+                let full = inner.full_events;
+                let (touched, mut refresh) = apply_event_to(&mut inner.state, event, full);
+                for r in touched {
+                    *inner.epochs.entry(r).or_insert(0) += 1;
+                    if let Some(s) = seq {
+                        let e = inner.event_seqs.entry(r).or_insert(0);
+                        *e = (*e).max(s);
+                    }
+                }
+                if let Some(s) = seq {
+                    refresh.retain(|r| inner.snapshot_seqs.get(r).is_none_or(|&snap| snap < s));
+                }
+                refresh
+            }
+        };
         drop(inner);
         let _ = self.change_tx.send(StateChange::EventApplied(event.clone()));
         refresh
+    }
+
+    /// Note that this client started operation `id` for a `request_type`
+    /// request (progress events do not name the request type).
+    pub async fn track_operation(&self, id: &str, request_type: &str) {
+        let mut inner = self.inner.write().await;
+        let op = inner.operation_mut(id);
+        op.request_type.get_or_insert_with(|| request_type.to_string());
+        drop(inner);
+        let _ = self.change_tx.send(StateChange::OperationChanged(id.to_string()));
+    }
+
+    /// Record an operation's state as queried with `GetOperation`.
+    pub async fn record_operation(&self, view: &OperationView) {
+        let mut inner = self.inner.write().await;
+        let op = inner.operation_mut(&view.operation_id);
+        op.request_type = Some(view.request_type.clone());
+        if view.stage.is_some() {
+            op.stage = view.stage.clone();
+        }
+        if view.status == OperationStatus::Completed && view.result.is_some() {
+            op.result = view.result.clone();
+        }
+        drop(inner);
+        let _ = self.change_tx.send(StateChange::OperationChanged(view.operation_id.clone()));
+    }
+
+    /// The result of operation `id`, once Core reported it complete.
+    pub async fn operation_result(&self, id: &str) -> Option<IpcResponse> {
+        self.inner.read().await.state.operations.get(id).and_then(|o| o.result.clone())
     }
 
     /// Get a copy of the current state.
@@ -442,7 +572,10 @@ fn apply_event_to(st: &mut SystemState, event: &IpcEvent, full_events: bool) -> 
             }
             (vec![Health], vec![Health])
         }
-        IpcEvent::Diagnostic { .. } => (vec![], vec![]),
+        // Handled by the store itself (not part of the queried resources).
+        IpcEvent::OperationProgress { .. } | IpcEvent::OperationCompleted { .. } | IpcEvent::Diagnostic { .. } => {
+            (vec![], vec![])
+        }
     }
 }
 
@@ -604,6 +737,59 @@ mod tests {
         let epoch = store.epoch(Resource::Health).await;
         store.apply_resource(epoch, ResourceData::health(&core_health()).unwrap()).await;
         assert!(!store.snapshot().await.access_auth_required);
+    }
+
+    #[tokio::test]
+    async fn event_seq_decides_staleness_and_requery() {
+        let store = StateStore::new();
+        store.begin_session(4).await;
+        let epoch = store.epoch(Resource::AclRules).await;
+        // Event 5 arrives while a query is in flight.
+        let refresh = store.apply_event_at(&IpcEvent::AclChanged { rule_id: "r1".into(), action: "updated".into() }, Some(5)).await;
+        assert!(refresh.contains(&Resource::AclRules));
+        // Read before event 5: stale.
+        assert!(!store.apply_resource_at(epoch, ResourceData::acl_rules(&core_rules()).unwrap(), Some(4)).await);
+        // Read after it: fresh, although the epoch moved.
+        assert!(store.apply_resource_at(epoch, ResourceData::acl_rules(&core_rules()).unwrap(), Some(5)).await);
+        // An older result must not replace a newer one.
+        assert!(!store.apply_resource_at(epoch + 1, ResourceData::acl_rules(&json!({ "rules": [] })).unwrap(), Some(4)).await);
+        assert_eq!(store.snapshot().await.acl_rules.len(), 1);
+
+        // Already reflected by the snapshot at 5: applied, but not re-queried.
+        let ev = IpcEvent::AclChanged { rule_id: "r1".into(), action: "updated".into() };
+        assert!(!store.apply_event_at(&ev, Some(5)).await.contains(&Resource::AclRules));
+        assert!(store.apply_event_at(&ev, Some(6)).await.contains(&Resource::AclRules));
+
+        // A new session (Core may have restarted) forgets the positions.
+        store.begin_session(4).await;
+        assert!(store.apply_resource_at(0, ResourceData::acl_rules(&core_rules()).unwrap(), Some(1)).await);
+    }
+
+    #[tokio::test]
+    async fn operations_follow_events_and_stay_bounded() {
+        let store = StateStore::new();
+        store.apply_event_at(&IpcEvent::OperationProgress { operation_id: "op-1".into(), stage: "relay_selected".into() }, Some(1)).await;
+        store.track_operation("op-1", "create_room").await;
+        let op = store.snapshot().await.operations["op-1"].clone();
+        assert_eq!((op.request_type.as_deref(), op.stage.as_deref()), (Some("create_room"), Some("relay_selected")));
+        assert!(store.operation_result("op-1").await.is_none());
+
+        let result = msst_ipc_protocol::IpcResponse::Ok(json!({ "room_id": "space-1" }));
+        store
+            .apply_event_at(&IpcEvent::OperationCompleted { operation_id: "op-1".into(), request_type: "create_room".into(), result }, Some(2))
+            .await;
+        assert!(store.operation_result("op-1").await.is_some());
+
+        // Still running ones survive eviction.
+        store.track_operation("op-running", "join_room").await;
+        for i in 0..100 {
+            let id = format!("op-x{i}");
+            let result = msst_ipc_protocol::IpcResponse::Ok(json!({}));
+            store.apply_event(&IpcEvent::OperationCompleted { operation_id: id, request_type: "join_room".into(), result }).await;
+        }
+        let ops = store.snapshot().await.operations;
+        assert_eq!(ops.len(), MAX_OPERATIONS);
+        assert!(ops.contains_key("op-running") && !ops.contains_key("op-1"));
     }
 
     #[tokio::test]

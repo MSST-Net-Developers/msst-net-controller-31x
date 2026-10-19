@@ -13,8 +13,12 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use crate::error::{ControllerError, Result};
 
-/// Maximum accepted frame size (Core itself rejects frames above 1 MiB).
+/// Maximum accepted frame size.  Protocol 0.4 Cores never send frames above
+/// [`CORE_MAX_FRAME_LEN`]; the extra room tolerates older Cores.
 pub const MAX_FRAME_LEN: usize = 16 * 1024 * 1024;
+
+/// Largest frame Core accepts (and, since protocol 0.4, sends).
+pub const CORE_MAX_FRAME_LEN: usize = 1024 * 1024;
 
 // ── Stream abstraction ───────────────────────────────────────────────────────
 
@@ -128,8 +132,15 @@ async fn connect_platform(path: &str) -> Result<IpcStream> {
 // ── Framed I/O ───────────────────────────────────────────────────────────────
 
 /// Send a framed IPC message (4-byte BE length + JSON payload).
+///
+/// A message above [`CORE_MAX_FRAME_LEN`] fails with `FrameTooLarge` before
+/// anything is written (Core would close the connection), so the stream
+/// stays usable.
 pub async fn send_frame<W: AsyncWrite + Unpin + ?Sized>(stream: &mut W, msg: &IpcMessage) -> Result<()> {
     let payload = serde_json::to_vec(msg)?;
+    if payload.len() > CORE_MAX_FRAME_LEN {
+        return Err(ControllerError::FrameTooLarge { size: payload.len(), max: CORE_MAX_FRAME_LEN });
+    }
     stream.write_all(&(payload.len() as u32).to_be_bytes()).await?;
     stream.write_all(&payload).await?;
     stream.flush().await?;
@@ -244,7 +255,7 @@ mod tests {
     #[tokio::test]
     async fn frame_round_trip_and_clean_eof() {
         let (mut a, mut b) = tokio::io::duplex(4096);
-        let msg = IpcMessage::Request { id: "r1".into(), body: IpcRequest::Health };
+        let msg = IpcMessage::Request { id: "r1".into(), body: IpcRequest::Health, r#async: false };
         send_frame(&mut a, &msg).await.unwrap();
         drop(a);
         match recv_frame(&mut b).await.unwrap() {
@@ -268,7 +279,7 @@ mod tests {
             other => panic!("unexpected {other:?}"),
         }
         // Stream stays usable.
-        let ev = IpcMessage::Event { body: IpcEvent::CoordinatorConnectionChanged { connected: true } };
+        let ev = IpcMessage::Event { body: IpcEvent::CoordinatorConnectionChanged { connected: true }, seq: Some(1) };
         send_frame(&mut a, &ev).await.unwrap();
         assert!(matches!(recv_frame(&mut b).await.unwrap(), Some(Frame::Message(IpcMessage::Event { .. }))));
     }
@@ -278,5 +289,20 @@ mod tests {
         let (mut a, mut b) = tokio::io::duplex(64);
         a.write_all(&((MAX_FRAME_LEN as u32) + 1).to_be_bytes()).await.unwrap();
         assert!(matches!(recv_frame(&mut b).await, Err(ControllerError::FrameTooLarge { .. })));
+    }
+
+    #[tokio::test]
+    async fn oversized_request_is_not_sent() {
+        let (mut a, mut b) = tokio::io::duplex(4096);
+        let rule = serde_json::json!({ "comment": "x".repeat(CORE_MAX_FRAME_LEN) });
+        let big = IpcMessage::Request { id: "big".into(), body: IpcRequest::CreateAclRule { rule }, r#async: false };
+        assert!(matches!(send_frame(&mut a, &big).await, Err(ControllerError::FrameTooLarge { .. })));
+        // Nothing was written: the next frame is intact.
+        let ok = IpcMessage::Request { id: "ok".into(), body: IpcRequest::Health, r#async: false };
+        send_frame(&mut a, &ok).await.unwrap();
+        match recv_frame(&mut b).await.unwrap() {
+            Some(Frame::Message(IpcMessage::Request { id, .. })) => assert_eq!(id, "ok"),
+            other => panic!("unexpected {other:?}"),
+        }
     }
 }

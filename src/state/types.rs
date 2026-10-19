@@ -91,6 +91,18 @@ pub struct HealthState {
     /// Core needs MSST access authentication (protocol 0.3; `None` from
     /// older Cores).
     pub access_auth_required: Option<bool>,
+    /// This connection's permission tier, `"viewer"` (queries only) or
+    /// `"admin"` (protocol 0.4; `None` from older Cores, which allow
+    /// everything).  Kept as text so an unknown future role does not make
+    /// the whole Health response undecodable.
+    pub ipc_role: Option<String>,
+}
+
+impl HealthState {
+    /// Core reported this connection as read-only (`ipc_role = "viewer"`).
+    pub fn is_viewer(&self) -> bool {
+        self.ipc_role.as_deref() == Some("viewer")
+    }
 }
 
 // ── Nodes ────────────────────────────────────────────────────────────────────
@@ -201,6 +213,23 @@ pub struct PendingAuthRequest {
     pub expires_at_ms: Option<u64>,
 }
 
+// ── Background operations ────────────────────────────────────────────────────
+
+/// A command Core runs as a background operation (protocol 0.4, `async`),
+/// as last reported by Core (`OperationProgress` / `OperationCompleted` /
+/// `GetOperation`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct OperationState {
+    /// The request's `type`, e.g. `"create_room"`.  `None` until known
+    /// (progress events do not carry it).
+    pub request_type: Option<String>,
+    /// Last reported step, e.g. `"relay_selected"`.
+    pub stage: Option<String>,
+    /// What the synchronous request would have returned; `None` while the
+    /// operation is running.
+    pub result: Option<msst_ipc_protocol::IpcResponse>,
+}
+
 // ── System state snapshot ────────────────────────────────────────────────────
 
 /// The Controller's complete view of Core state.
@@ -218,6 +247,9 @@ pub struct SystemState {
     /// set by the `AccessAuthRequired` event and cleared once `Health`
     /// reports a valid authentication.
     pub access_auth_required: bool,
+    /// Recent background operations by ID (bounded; cleared on reconnect,
+    /// when progress may have been missed).
+    pub operations: BTreeMap<String, OperationState>,
 }
 
 /// Sections of [`SystemState`] that can be re-queried from Core individually.

@@ -55,6 +55,7 @@ async fn query_vectors_decode_into_the_view() {
     assert_eq!(h.access_auth_required, Some(false));
     assert_eq!(h.generation, Some(0));
     assert_eq!(h.device_handle, None, "unset strings are null in protocol 0.3");
+    assert_eq!(h.ipc_role.as_deref(), Some("admin"), "protocol 0.4 reports the connection's role");
     assert!(!s.access_auth_required);
 
     assert_eq!(s.room.room_id.as_deref(), Some("space-1"));
@@ -78,7 +79,10 @@ async fn event_vectors_apply_without_requery() {
     assert!(!events.is_empty());
     for e in events {
         let body = match serde_json::from_value::<IpcMessage>(e).unwrap() {
-            IpcMessage::Event { body } => body,
+            IpcMessage::Event { body, seq } => {
+                assert!(seq.is_some(), "protocol 0.4 state events carry seq: {body:?}");
+                body
+            }
             other => panic!("not an event: {other:?}"),
         };
         let refresh = store.apply_event(&body).await;
@@ -91,6 +95,16 @@ async fn event_vectors_apply_without_requery() {
     assert_eq!(s.nodes["device-0000000b"].display_name.as_deref(), Some("Bob's new PC"));
     assert_eq!(s.nodes["device-0000000b"].path_mode.as_deref(), Some("relay"), "path mode survives node updates");
     assert_eq!(s.room.room_name.as_deref(), Some("Test room"));
+}
+
+#[test]
+fn query_vectors_carry_event_seq() {
+    for name in ["health", "get_nodes", "get_acl_rules", "get_system_state"] {
+        match serde_json::from_value::<IpcMessage>(vector(name)["response"].clone()).unwrap() {
+            IpcMessage::Response { event_seq, .. } => assert!(event_seq.is_some(), "{name}: no event_seq"),
+            other => panic!("{name}: not a response: {other:?}"),
+        }
+    }
 }
 
 #[test]

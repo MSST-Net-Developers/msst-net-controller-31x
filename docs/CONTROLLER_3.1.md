@@ -17,8 +17,14 @@ android/             Android app (Compose) + rust/ JNI glue (embedded Core + thi
 docs/PROTOCOL_PROPOSALS_3.1.md   issues found in Core / protocol (not changed here)
 ```
 
-Protocol: built against `msst-ipc-protocol` 0.3; Cores speaking 0.1/0.2
-still work (features they lack are disabled with an explanation).
+Protocol: built against `msst-ipc-protocol` 0.4; Cores speaking 0.1–0.3
+still work (features they lack are disabled with an explanation).  With a
+0.4 Core the Controller checks event `seq` (a gap triggers a full resync),
+uses response `event_seq` to discard stale query results, runs
+`CreateRoom` / `JoinRoom` as background operations (progress shown in the
+dialog; `GetOperation` recovers a result missed across a reconnect), turns
+off streamed log lines (`SetLogStream`) and shows a read-only banner when
+Core gives the connection the `viewer` role.
 
 Every front end uses the same three operations: read the Controller view,
 send an `IpcRequest` from the shared `msst-ipc-protocol` crate, and get
@@ -79,6 +85,9 @@ VPN".
   framing), WebUI route/security tests, JNI glue tests on the host.
 - Core contract vectors (`tests/core_contract.rs`, reads
   `../msst-net-core-31x/crates/msst-ipc-protocol/tests/vectors`).
+- Protocol 0.4 behaviour is tested against FakeCore only (seq gaps and
+  duplicates, async operations, missed completions, viewer role, handshake
+  rejection); not yet run against a real 0.4 Core.
 - End to end against a real (sandboxed) 3.1.x Core (protocol 0.2 and 0.3): sync, commands,
   rejections, rule clearing, Core restart → automatic resync, WebUI login and
   every tab rendered in headless Chromium.

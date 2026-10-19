@@ -49,6 +49,11 @@ pub enum ControllerError {
     #[error("Core error [{code}]: {message}")]
     CoreError { code: String, message: String },
 
+    /// Core no longer knows a background operation this client was waiting
+    /// for (Core restarted, or the result expired): the outcome is unknown.
+    #[error("operation {operation_id} is unknown to Core")]
+    OperationLost { operation_id: String },
+
     /// The request is not supported by the connected Core's protocol version.
     #[error("{0}")]
     Unsupported(String),
@@ -129,6 +134,7 @@ impl ControllerError {
             Self::RequestTimeout { .. } => "timeout",
             Self::ClientShutdown { .. } => "shutdown",
             Self::CoreError { .. } => "core",
+            Self::OperationLost { .. } => "operation",
             Self::Unsupported(_) => "unsupported",
             Self::State(_) => "state",
             Self::Shutdown => "shutdown",
@@ -192,6 +198,10 @@ fn core_error_message(code: &str, raw: &str) -> String {
         ROOM_CREATE_FAILED => "创建房间失败，请稍后重试。".into(),
         ROOM_REJECTED => "无法加入房间，请检查房间号和密码。".into(),
         PERSIST_FAILED => "客户端核心无法保存配置（磁盘写入失败），更改未生效。".into(),
+        PERMISSION_DENIED => "当前账户只有只读权限，不能进行更改。请让管理员把你加入 msst-net 用户组（Windows：MSST-Net Administrators），然后重新启动控制器。".into(),
+        BUSY => "客户端核心正忙（同时进行的操作过多），请稍后重试。".into(),
+        INCOMPATIBLE_VERSION => "客户端核心与控制器的协议版本不兼容，请将两者更新到同一版本。".into(),
+        RESPONSE_TOO_LARGE => "要读取的数据超出了单次传输上限，请减少查询的条数后重试。".into(),
         _ => format!("客户端核心返回错误（{code}）。"),
     }
 }
@@ -205,6 +215,7 @@ impl ControllerError {
                 "未连接到 MSST-Net 核心服务。请确认核心服务正在运行，控制器会自动重连。".into()
             }
             Self::ConnectionLost => "与核心服务的连接已断开，操作结果未知。重连后请查看最新状态。".into(),
+            Self::OperationLost { .. } => "核心服务已不再记录此操作（可能已重启），操作结果未知，请查看最新状态。".into(),
             Self::VersionMismatch { remote, local } => {
                 format!("核心服务的协议版本（{remote}）与控制器（{local}）不兼容，请将两者更新到同一版本。")
             }

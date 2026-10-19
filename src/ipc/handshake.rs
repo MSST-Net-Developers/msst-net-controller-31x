@@ -42,13 +42,28 @@ pub struct Capabilities {
     /// Events cover every view change and `RoomStateChanged` /
     /// `NodeStateChanged` carry full state (protocol 0.3).
     pub full_events: bool,
+    /// Events carry `seq`, responses `event_seq`; `Health` reports
+    /// `ipc_role` (protocol 0.4).
+    pub event_seq: bool,
+    /// Commands can run as background operations (`async`,
+    /// `GetOperation`, `OperationProgress` / `OperationCompleted`; 0.4).
+    pub operations: bool,
+    /// `SetLogStream` (protocol 0.4).
+    pub log_stream: bool,
 }
 
 impl Capabilities {
     /// Derive capabilities from a remote protocol version.
     pub fn from_version(remote: (u32, u32, u32)) -> Self {
         let (_, minor, _) = remote;
-        Self { get_services: minor >= 2, clear_acl_rules: minor >= 3, full_events: minor >= 3 }
+        Self {
+            get_services: minor >= 2,
+            clear_acl_rules: minor >= 3,
+            full_events: minor >= 3,
+            event_seq: minor >= 4,
+            operations: minor >= 4,
+            log_stream: minor >= 4,
+        }
     }
 }
 
@@ -103,6 +118,9 @@ mod tests {
         assert!(!v2.clear_acl_rules && !v2.full_events);
         let v3 = Capabilities::from_version((0, 3, 0));
         assert!(v3.clear_acl_rules && v3.full_events);
+        assert!(!v3.event_seq && !v3.operations && !v3.log_stream);
+        let v4 = Capabilities::from_version((0, 4, 0));
+        assert!(v4.event_seq && v4.operations && v4.log_stream);
     }
 
     async fn run(core_version: u32) -> (Result<HandshakeResult>, u32) {

@@ -1,6 +1,19 @@
 // Small presentation helpers.
 
-import type { FirewallRule, PermissionGroup, ProtocolPort } from '$lib/types';
+import type { FirewallRule, PermissionGroup, ProtocolPort, SystemState } from '$lib/types';
+
+const OPERATION_STAGES: Record<string, string> = {
+  relay_selected: '已选定中转服务器',
+  room_created: '房间已创建，正在加入',
+  join_sent: '已发送加入请求，等待确认',
+};
+
+/** Progress of this Controller's running `requestType` operation as reported
+ *  by Core (protocol 0.4), or null when none is known. */
+export function operationStage(state: SystemState | null | undefined, requestType: string): string | null {
+  const op = Object.values(state?.operations ?? {}).find((o) => o.request_type === requestType && !o.result);
+  return (op?.stage && OPERATION_STAGES[op.stage]) || null;
+}
 
 export function formatBytes(b: number): string {
   if (b >= 1_073_741_824) return (b / 1_073_741_824).toFixed(1) + ' GB';

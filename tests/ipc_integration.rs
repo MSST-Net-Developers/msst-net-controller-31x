@@ -4,7 +4,8 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use msst_ipc_protocol::{AuthDecision, IpcError, IpcEvent, IpcRequest};
+use msst_ipc_protocol::version::make_version;
+use msst_ipc_protocol::{AuthDecision, IpcError, IpcEvent, IpcRequest, Role};
 use msst_net_controller::error::ControllerError;
 use msst_net_controller::ipc::client::{IpcClient, IpcClientConfig, RetryOutcome};
 use msst_net_controller::ipc::mock::{FakeCore, default_responses};
@@ -18,6 +19,8 @@ fn fast_config() -> IpcClientConfig {
         incompatible_retry_ms: 50,
         request_timeout: Duration::from_secs(2),
         poll_interval: Duration::from_secs(60),
+        operation_timeout: Duration::from_secs(5),
+        operation_poll_interval: Duration::from_millis(100),
     }
 }
 
@@ -336,5 +339,202 @@ async fn retry_now_skips_backoff_or_resyncs() {
     .await;
     synced(&client).await;
     assert_eq!(client.connection_diagnostics().await.disconnections, 0, "a connected retry must not drop the session");
+    client.shutdown();
+}
+
+// ── Protocol 0.4 ─────────────────────────────────────────────────────────────
+
+fn acl_changed() -> IpcEvent {
+    IpcEvent::AclChanged { rule_id: "r".into(), action: "updated".into() }
+}
+
+#[tokio::test]
+async fn event_gap_triggers_full_resync() {
+    let core = FakeCore::new(default_responses);
+    let client = start(&core);
+    synced(&client).await;
+    core.push_event(IpcEvent::CoordinatorConnectionChanged { connected: true }); // seq 1
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    core.clear_requests();
+
+    core.lose_events(2); // seq 2, 3 never arrive
+    core.push_event(IpcEvent::CoordinatorConnectionChanged { connected: false }); // seq 4
+    let k = core.clone();
+    wait_for("full resync after a seq gap", move || {
+        let k = k.clone();
+        async move {
+            let r = k.requests();
+            [IpcRequest::GetAclGroups, IpcRequest::GetPendingAuth, IpcRequest::GetSystemState]
+                .iter()
+                .all(|want| r.iter().any(|q| std::mem::discriminant(q) == std::mem::discriminant(want)))
+        }
+    })
+    .await;
+    synced(&client).await;
+    client.shutdown();
+}
+
+#[tokio::test]
+async fn duplicate_event_is_ignored() {
+    let core = FakeCore::new(default_responses);
+    let client = start(&core);
+    synced(&client).await;
+    core.push_event(acl_changed()); // seq 1
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // A frame repeating seq 1 must not be applied.
+    core.push_raw_event(
+        IpcEvent::AccessRequestCreated {
+            request_id: "dup".into(),
+            src_device_id: "d".into(),
+            src_user_id: None,
+            src_device_display_name: None,
+            src_user_display_name: None,
+            proto: "tcp".into(),
+            dst_port: 1,
+            service_name: None,
+        },
+        Some(1),
+    );
+    // seq 2, observable without a re-query: once applied, the duplicate was processed.
+    core.push_event(IpcEvent::OperationProgress { operation_id: "op-z".into(), stage: "x".into() });
+    let c = client.clone();
+    wait_for("seq 2 applied", move || {
+        let c = c.clone();
+        async move { c.state_store().snapshot().await.operations.contains_key("op-z") }
+    })
+    .await;
+    assert!(client.state_store().snapshot().await.pending_auth.is_empty());
+    client.shutdown();
+}
+
+#[tokio::test]
+async fn log_stream_is_switched_off_on_0_4_only() {
+    let core = FakeCore::new(default_responses);
+    let client = start(&core);
+    synced(&client).await;
+    assert!(core.requests().iter().any(|q| matches!(q, IpcRequest::SetLogStream { enabled: false })));
+    client.shutdown();
+
+    let old = FakeCore::new(default_responses);
+    old.set_version(make_version(0, 3, 0));
+    let client = start(&old);
+    synced(&client).await;
+    assert!(!old.requests().iter().any(|q| matches!(q, IpcRequest::SetLogStream { .. })));
+    client.shutdown();
+}
+
+fn room_core() -> FakeCore {
+    FakeCore::new(|req| match req {
+        IpcRequest::CreateRoom { room_name, .. } => Ok(json!({ "room_id": "space-9", "room_name": room_name })),
+        IpcRequest::JoinRoom { .. } => Err(IpcError { code: "room_rejected".into(), message: "wrong password".into() }),
+        other => default_responses(other),
+    })
+}
+
+fn create_room() -> IpcRequest {
+    IpcRequest::CreateRoom { room_name: "game".into(), password: None }
+}
+
+#[tokio::test]
+async fn room_commands_run_as_operations() {
+    let core = room_core();
+    let client = start(&core);
+    synced(&client).await;
+
+    let v = client.command(create_room()).await.unwrap();
+    assert_eq!(v["room_id"], "space-9", "the operation's result, not the accepted response");
+    assert_eq!(core.operation_ids().len(), 1);
+
+    let e = client.command(IpcRequest::JoinRoom { room_id: "space-1".into(), password: None }).await.unwrap_err();
+    assert!(matches!(&e, ControllerError::CoreError { code, .. } if code == "room_rejected"), "{e:?}");
+
+    let ops = client.state_store().snapshot().await.operations;
+    assert_eq!(ops.len(), 2);
+    assert!(ops.values().all(|o| o.result.is_some()));
+    assert!(ops.values().any(|o| o.request_type.as_deref() == Some("create_room")));
+    client.shutdown();
+}
+
+#[tokio::test]
+async fn room_commands_are_synchronous_on_0_3() {
+    let core = room_core();
+    core.set_version(make_version(0, 3, 0));
+    let client = start(&core);
+    synced(&client).await;
+    assert_eq!(client.command(create_room()).await.unwrap()["room_id"], "space-9");
+    assert!(core.operation_ids().is_empty());
+    client.shutdown();
+}
+
+#[tokio::test]
+async fn missed_completion_is_recovered_with_get_operation() {
+    let core = room_core();
+    core.set_hold_completions(true);
+    let client = start(&core);
+    synced(&client).await;
+    assert_eq!(client.command(create_room()).await.unwrap()["room_id"], "space-9");
+    assert!(core.requests().iter().any(|q| matches!(q, IpcRequest::GetOperation { .. })));
+    client.shutdown();
+}
+
+#[tokio::test]
+async fn operation_forgotten_by_restarted_core_has_unknown_outcome() {
+    let core = room_core();
+    core.set_hold_completions(true);
+    // Slow polling, so the restart happens while the client is waiting.
+    let cfg = IpcClientConfig { operation_poll_interval: Duration::from_millis(500), ..fast_config() };
+    let client = IpcClient::with_connector(cfg, StateStore::new(), core.connector());
+    synced(&client).await;
+
+    let c = client.clone();
+    let waiting = tokio::spawn(async move { c.command(create_room()).await });
+    let k = core.clone();
+    wait_for("operation started", move || {
+        let k = k.clone();
+        async move { !k.operation_ids().is_empty() }
+    })
+    .await;
+    core.set_running(false);
+    core.set_running(true);
+
+    let e = waiting.await.unwrap().unwrap_err();
+    assert!(matches!(e, ControllerError::OperationLost { .. }), "{e:?}");
+    assert!(e.user_message().contains("结果未知"));
+    client.shutdown();
+}
+
+#[tokio::test]
+async fn viewer_role_is_reported_and_commands_are_refused() {
+    let core = FakeCore::new(default_responses);
+    core.set_role(Role::Viewer);
+    let client = start(&core);
+    synced(&client).await;
+    let health = client.state_store().snapshot().await.health.unwrap();
+    assert_eq!(health.ipc_role.as_deref(), Some("viewer"));
+    assert!(health.is_viewer());
+
+    let e = client.command(IpcRequest::DeleteAclRule { rule_id: "r".into() }).await.unwrap_err();
+    assert!(matches!(&e, ControllerError::CoreError { code, .. } if code == "permission_denied"), "{e:?}");
+    assert!(e.user_message().contains("只读"));
+    assert_eq!(client.connection_status().await, ConnectionStatus::Connected, "the session stays open");
+    client.shutdown();
+}
+
+#[tokio::test]
+async fn handshake_rejection_frame_marks_incompatible() {
+    let core = FakeCore::new(default_responses);
+    core.set_reject_handshake(true);
+    let client = start(&core);
+    let c = client.clone();
+    wait_for("incompatible", move || {
+        let c = c.clone();
+        async move { c.connection_status().await == ConnectionStatus::Incompatible }
+    })
+    .await;
+    assert!(client.connection_diagnostics().await.last_error.unwrap().contains("fake Core rejects"));
+
+    core.set_reject_handshake(false);
+    synced(&client).await;
     client.shutdown();
 }
