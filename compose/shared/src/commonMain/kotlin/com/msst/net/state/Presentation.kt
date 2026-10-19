@@ -189,6 +189,9 @@ fun validPortExpr(s: String): Boolean {
     return a >= 1 && b <= 65535 && a <= b
 }
 
+/** A port expression that matches every port (`*`, `1-65535`). */
+fun coversAllPorts(expr: String): Boolean = expr.trim().let { it == "*" || it == "1-65535" }
+
 /** Mnemonic handle rule (Core `validate_handle`: lowercase letters, digits, hyphens). */
 fun validHandle(s: String): Boolean = Regex("^[a-z0-9-]+$").matches(s)
 

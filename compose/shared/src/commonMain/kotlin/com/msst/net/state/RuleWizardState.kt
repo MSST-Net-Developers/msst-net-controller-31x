@@ -101,6 +101,10 @@ class RuleWizardState(from: FirewallRule? = null, val device: PresetDevice? = nu
         if (on) services = emptySet()
     }
 
+    /** The entered port matches every port of [portProto]: adding it needs
+     *  the same risk confirmation as "所有协议及端口". */
+    val portInputCoversAll: Boolean get() = coversAllPorts(portInput)
+
     fun addPort() {
         val p = portInput.trim()
         if (p.isEmpty()) return

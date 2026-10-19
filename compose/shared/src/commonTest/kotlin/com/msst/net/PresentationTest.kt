@@ -17,6 +17,7 @@ import com.msst.net.state.BannerKind
 import com.msst.net.state.CoreStatus
 import com.msst.net.state.coreBanner
 import com.msst.net.state.coreReady
+import com.msst.net.state.coversAllPorts
 import com.msst.net.state.coreStatus
 import com.msst.net.state.coreStatusLabel
 import com.msst.net.state.coordinatorActionsAvailable
@@ -131,6 +132,10 @@ class PresentationTest {
         assertFalse(validPortExpr("443-80"))
         assertFalse(validPortExpr("65536"))
         assertFalse(validPortExpr("80,443"))
+        assertTrue(coversAllPorts("*"))
+        assertTrue(coversAllPorts(" 1-65535 "))
+        assertFalse(coversAllPorts("1-65534"))
+        assertFalse(coversAllPorts("80"))
         assertTrue(validHandle("alice-laptop2"))
         assertFalse(validHandle("Alice"))
         assertEquals("abjust", normalizeNamespace(" ABjust.msst.net "))

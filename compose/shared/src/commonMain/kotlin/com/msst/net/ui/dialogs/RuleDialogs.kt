@@ -83,6 +83,9 @@ fun RuleWizardDialog(from: FirewallRule?, device: PresetDevice? = null, onClose:
     var busy by remember { mutableStateOf(false) }
     var categories by remember { mutableStateOf(listOf<ServiceCategory>()) }
     var servicesError by remember { mutableStateOf<String?>(null) }
+    // A pending risky choice ("all protocols and ports", or a port entry
+    // covering every port): what it covers, and what confirming does.
+    var riskConfirm by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
 
     LaunchedEffect(Unit) {
         if (view?.capabilities?.getServices != true) {
@@ -163,7 +166,10 @@ fun RuleWizardDialog(from: FirewallRule?, device: PresetDevice? = null, onClose:
                         Modifier.fillMaxWidth().heightIn(max = 280.dp).clip(Radius.md).border(1.dp, Msst.colors.borderLight, Radius.md)
                             .verticalScroll(rememberScrollState()).padding(8.dp),
                     ) {
-                        CheckRow("所有服务", w.allServices, w::changeAllServices, hint = "tcp+udp / *")
+                        CheckRow("所有协议及端口（不推荐）", w.allServices, { on ->
+                            // Selecting it needs an explicit confirmation; unselecting does not.
+                            if (on) riskConfirm = "所有协议及端口" to { w.changeAllServices(true) } else w.changeAllServices(false)
+                        }, hint = "tcp+udp / *")
                         categories.forEach { cat ->
                             Text(cat.label, Modifier.padding(top = 8.dp, bottom = 2.dp), style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold), color = Msst.colors.textTertiary)
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -178,8 +184,16 @@ fun RuleWizardDialog(from: FirewallRule?, device: PresetDevice? = null, onClose:
                 } else {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Select(listOf("tcp+udp", "tcp", "udp"), w.portProto, { it.uppercase() }, { w.portProto = it }, Modifier.width(120.dp))
-                        TextInput(w.portInput, { w.portInput = it }, Modifier.weight(1f), placeholder = "端口：* / 80 / 80-443", onDone = w::addPort)
-                        SecondaryButton("添加", w::addPort)
+                        val addPort = {
+                            if (w.portInputCoversAll) {
+                                val proto = if (w.portProto == "tcp+udp") "TCP 和 UDP" else w.portProto.uppercase()
+                                riskConfirm = "$proto 的全部端口" to w::addPort
+                            } else {
+                                w.addPort()
+                            }
+                        }
+                        TextInput(w.portInput, { w.portInput = it }, Modifier.weight(1f), placeholder = "端口：* / 80 / 80-443", onDone = addPort)
+                        SecondaryButton("添加", addPort)
                     }
                     if (w.ports.isNotEmpty()) {
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -196,6 +210,19 @@ fun RuleWizardDialog(from: FirewallRule?, device: PresetDevice? = null, onClose:
             }
         }
         w.error?.let { InlineError(it) }
+    }
+
+    riskConfirm?.let { (what, confirm) ->
+        ConfirmDialog(
+            "存在安全风险",
+            "这条规则将匹配本设备上$what。" +
+                "如果动作为「允许」，规则来源将能访问本设备上所有正在监听的服务，" +
+                "包括远程桌面、文件共享、数据库、调试接口等本不打算对外开放的服务。\n\n" +
+                "建议只选择实际需要的服务，或填写具体端口。",
+            "仍然选择",
+            onConfirm = confirm,
+            onDismiss = { riskConfirm = null },
+        )
     }
 }
 
