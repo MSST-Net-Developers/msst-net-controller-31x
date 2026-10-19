@@ -72,3 +72,32 @@ tokio = { version = "1", features = ["full", "net"] }
 
 [dev-dependencies]
 tower = "0.5"
+
+[profile.dev]
+panic = "abort"
+
+[profile.dev-fast]
+inherits = "dev"
+debug = false
+strip = "debuginfo"
+
+[profile.release]
+opt-level = "z"
+strip = true
+lto = true
+codegen-units = 1
+panic = "abort"
+debug = false
+debug-assertions = false
+overflow-checks = false
+incremental = false
+rpath = false
+
+[profile.release.package."*"]
+opt-level = "z"
+strip = true
+codegen-units = 1
+debug = false
+debug-assertions = false
+overflow-checks = false
+incremental = false
