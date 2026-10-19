@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -43,6 +44,8 @@ import com.msst.net.state.CoreStatus
 import com.msst.net.state.attempt
 import com.msst.net.state.coreStatus
 import com.msst.net.state.coreStatusLabel
+import com.msst.net.state.coordinatorActionsAvailable
+import com.msst.net.state.coordinatorUnreachable
 import com.msst.net.state.deviceMnemonic
 import com.msst.net.state.errorMessage
 import com.msst.net.state.pathLabel
@@ -171,19 +174,25 @@ private fun PeerCard(peer: RoomPeer, self: Boolean, path: String?) {
 private fun ModePage(view: ControllerView?) {
     val ctx = LocalController.current
     val backendError by ctx.store.backendError.collectAsState()
-    val status = coreStatus(view, backendError)
-    val ready = status == CoreStatus.Ok
+    // Rooms and access authentication go through the coordinator: only
+    // offered while Core reports its coordinator connection is up.
+    val ready = coordinatorActionsAvailable(view)
+    val noCoordinator = coordinatorUnreachable(view)
     val health = if (view?.connected == true) view.state.health else null
     var dialog by remember { mutableStateOf<String?>(null) }
-    var notReadyHint by remember { mutableStateOf(false) }
-    LaunchedEffect(notReadyHint) {
-        if (notReadyHint) {
+    var hint by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(hint) {
+        if (hint != null) {
             delay(2_500)
-            notReadyHint = false
+            hint = null
         }
     }
-    fun requireCore(open: String) {
-        if (ready) dialog = open else notReadyHint = true
+    fun requireCoordinator(open: String, what: String) {
+        hint = when {
+            ready -> null.also { dialog = open }
+            noCoordinator -> "无法连接协调服务器，暂时无法$what"
+            else -> "客户端核心未就绪，暂时无法$what"
+        }
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -199,8 +208,8 @@ private fun ModePage(view: ControllerView?) {
                     ModeHeader(MdiIcons.AccountMultipleOutline, "使用房间模式（推荐）")
                     if (health != null && !health.isAuthenticated && ready) Notice("当前以免认证身份接入，仅可使用房间模式。")
                     Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        BigAction("创建房间", MdiIcons.Plus, primary = true, available = ready, Modifier.weight(1f)) { requireCore("create") }
-                        BigAction("加入房间", MdiIcons.Login, primary = false, available = ready, Modifier.weight(1f)) { requireCore("join") }
+                        BigAction("创建房间", MdiIcons.Plus, primary = true, available = ready, Modifier.weight(1f)) { requireCoordinator("create", "创建或加入房间") }
+                        BigAction("加入房间", MdiIcons.Login, primary = false, available = ready, Modifier.weight(1f)) { requireCoordinator("join", "创建或加入房间") }
                     }
                 }
 
@@ -221,15 +230,16 @@ private fun ModePage(view: ControllerView?) {
                     }
                 }
 
-                if (notReadyHint) InlineError("客户端核心未就绪，无法创建或加入房间")
+                hint?.let { InlineError(it) }
                 LinkButton("项目官网 · 使用说明", { ctx.services.openUrl(WEBSITE) }, MdiIcons.BookOpenOutline, color = Msst.colors.textTertiary)
             }
             StatusBar(view, backendError)
         }
         FloatingActionButton(
-            onClick = { dialog = "auth" },
+            onClick = { requireCoordinator("auth", "查看认证状态或发起接入认证") },
             modifier = Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = 64.dp).size(48.dp),
-            containerColor = Msst.colors.primary,
+            containerColor = if (ready) Msst.colors.primary else Msst.colors.borderPrimary,
+            elevation = if (ready) FloatingActionButtonDefaults.elevation() else FloatingActionButtonDefaults.elevation(0.dp, 0.dp, 0.dp, 0.dp),
             contentColor = Msst.colors.textInverse,
             shape = Radius.full,
         ) { MIcon(MdiIcons.AccountKeyOutline, 22.dp, contentDescription = "接入认证") }

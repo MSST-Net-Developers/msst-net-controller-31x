@@ -44,11 +44,10 @@ import com.msst.net.model.obj
 import com.msst.net.platform.WebSession
 import com.msst.net.platform.formatTime
 import com.msst.net.platform.query
-import com.msst.net.state.CoreStatus
 import com.msst.net.state.Phase
 import com.msst.net.state.attempt
 import com.msst.net.state.connectionLabel
-import com.msst.net.state.coreStatus
+import com.msst.net.state.coreReady
 import com.msst.net.state.errorMessage
 import com.msst.net.state.formatBytes
 import com.msst.net.state.oneDecimal
@@ -100,8 +99,7 @@ fun SettingsScreen() {
 private fun IdentityCard() {
     val ctx = LocalController.current
     val view by ctx.store.view.collectAsState()
-    val backendError by ctx.store.backendError.collectAsState()
-    val ready = coreStatus(view, backendError) == CoreStatus.Ok
+    val ready = coreReady(view)
     val health = if (view?.connected == true) view?.state?.health else null
     var name by remember { mutableStateOf("") }
     var handle by remember { mutableStateOf("") }
@@ -244,8 +242,7 @@ private fun RemoteAccessCard(session: WebSession) {
 private fun DiagnosticsCard() {
     val ctx = LocalController.current
     val view by ctx.store.view.collectAsState()
-    val backendError by ctx.store.backendError.collectAsState()
-    val ready = coreStatus(view, backendError) == CoreStatus.Ok
+    val ready = coreReady(view)
     val connected = view?.connected == true
     val health = if (connected) view?.state?.health else null
     val scope = rememberCoroutineScope()

@@ -20,8 +20,9 @@ fun coreStatus(view: ControllerView?, backendError: String?): CoreStatus {
             val h = v.state.health
             when {
                 h == null -> if (v.state.sync.failed) CoreStatus.Warning else CoreStatus.Checking
-                h.status == "ok" -> CoreStatus.Ok
-                else -> CoreStatus.Warning
+                h.status != "ok" -> CoreStatus.Warning
+                coordinatorUnreachable(v) -> CoreStatus.Warning
+                else -> CoreStatus.Ok
             }
         }
         ConnectionStatus.Connecting -> CoreStatus.Checking
@@ -29,12 +30,33 @@ fun coreStatus(view: ControllerView?, backendError: String?): CoreStatus {
     }
 }
 
+/**
+ * Core reports that its coordinator connection is down (`Health.ws_connected
+ * = false`).  Unknown (older Cores, Health not read yet) is not "down".
+ */
+fun coordinatorUnreachable(view: ControllerView?): Boolean =
+    view?.connected == true && view.state.health?.wsConnected == false
+
+/** Core itself is usable: connected and its Health is `ok` (the
+ *  coordinator connection may still be down). */
+fun coreReady(view: ControllerView?): Boolean =
+    view?.connected == true && view.state.health?.status == "ok"
+
+/** Actions that need the coordinator — creating or joining rooms, access
+ *  authentication — can be offered. */
+fun coordinatorActionsAvailable(view: ControllerView?): Boolean =
+    coreReady(view) && !coordinatorUnreachable(view)
+
 /** One-line explanation of [coreStatus] for the status bar. */
 fun coreStatusLabel(view: ControllerView?, backendError: String?): String {
     val v = view ?: return if (backendError != null) "无法读取控制器状态：$backendError" else "检查中…"
     return when (coreStatus(v, backendError)) {
-        CoreStatus.Ok -> if (v.state.health?.wsConnected == false) "客户端核心正常，协调服务器未连接" else "客户端核心状态正常"
-        CoreStatus.Warning -> if (v.state.sync.failed) "客户端核心部分状态读取失败" else "客户端核心状态异常"
+        CoreStatus.Ok -> "客户端核心状态正常"
+        CoreStatus.Warning -> when {
+            coordinatorUnreachable(v) -> "客户端核心无法连接协调服务器"
+            v.state.sync.failed -> "客户端核心部分状态读取失败"
+            else -> "客户端核心状态异常"
+        }
         CoreStatus.Checking -> if (v.connected) "正在读取客户端核心状态…" else "正在连接客户端核心…"
         CoreStatus.Error -> if (v.connection == ConnectionStatus.Incompatible) "客户端核心版本不兼容" else "客户端核心可能没有启动"
     }
@@ -63,7 +85,9 @@ fun coreBanner(view: ControllerView?, backendError: String?, authPlace: String):
         !v.connected -> null // first connect; the status bar shows progress
         s.sync.syncing -> Banner(BannerKind.Info, "正在从客户端核心读取最新状态…")
         s.sync.failed -> Banner(BannerKind.Warn, "部分状态读取失败，相关内容可能缺失", s.sync.message)
-        s.accessAuthRequired && s.health?.isAuthenticated != true ->
+        // While the coordinator is unreachable authentication is impossible;
+        // the status bar explains why.
+        s.accessAuthRequired && s.health?.isAuthenticated != true && !coordinatorUnreachable(v) ->
             Banner(BannerKind.Warn, "MSST 接入认证未完成或已过期，请在${authPlace}完成接入认证")
         s.health?.isViewer == true -> Banner(
             BannerKind.Info,

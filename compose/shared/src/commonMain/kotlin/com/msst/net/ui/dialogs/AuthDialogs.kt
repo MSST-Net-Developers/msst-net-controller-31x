@@ -38,8 +38,8 @@ import com.msst.net.platform.nowMs
 import com.msst.net.state.OidcFlow
 import com.msst.net.state.OidcFlow.Status
 import com.msst.net.state.attempt
-import com.msst.net.state.coreStatus
-import com.msst.net.state.CoreStatus
+import com.msst.net.state.coordinatorActionsAvailable
+import com.msst.net.state.coordinatorUnreachable
 import com.msst.net.state.errorMessage
 import com.msst.net.ui.LocalController
 import com.msst.net.ui.MdiIcons
@@ -65,9 +65,11 @@ fun OidcDialog(onClose: () -> Unit) {
     val ctx = LocalController.current
     val scope = rememberCoroutineScope()
     val view by ctx.store.view.collectAsState()
-    val backendError by ctx.store.backendError.collectAsState()
-    val ready = coreStatus(view, backendError) == CoreStatus.Ok
-    val health = if (view?.connected == true) view?.state?.health else null
+    // Authentication goes through the coordinator; while it is unreachable
+    // the stored status cannot be checked either, so none is shown.
+    val ready = coordinatorActionsAvailable(view)
+    val noCoordinator = coordinatorUnreachable(view)
+    val health = if (ready) view?.state?.health else null
     val flow = remember { OidcFlow(ctx.backend, ctx.store, scope, ctx.services::openUrl) }
     DisposableEffect(flow) { onDispose { flow.cancel() } }
     LaunchedEffect(flow.status) {
@@ -134,7 +136,10 @@ fun OidcDialog(onClose: () -> Unit) {
                     Hint("如需切换账号，可重新认证（将覆盖当前凭据）。")
                 } else {
                     Hint("通过 MSST 联合认证系统获取接入身份，实现账号统一管理。")
-                    if (!ready) InlineError("客户端核心未就绪，暂时无法认证。")
+                    when {
+                        noCoordinator -> InlineError("无法连接协调服务器，暂时无法查看认证状态或发起接入认证。")
+                        !ready -> InlineError("客户端核心未就绪，暂时无法认证。")
+                    }
                 }
             }
             Status.Starting -> {

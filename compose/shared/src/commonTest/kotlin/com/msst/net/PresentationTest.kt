@@ -14,7 +14,11 @@ import com.msst.net.platform.ControllerVariant
 import com.msst.net.state.BannerKind
 import com.msst.net.state.CoreStatus
 import com.msst.net.state.coreBanner
+import com.msst.net.state.coreReady
 import com.msst.net.state.coreStatus
+import com.msst.net.state.coreStatusLabel
+import com.msst.net.state.coordinatorActionsAvailable
+import com.msst.net.state.coordinatorUnreachable
 import com.msst.net.state.formatPorts
 import com.msst.net.state.formatPrincipal
 import com.msst.net.state.normalizeNamespace
@@ -53,6 +57,34 @@ class PresentationTest {
         assertEquals(CoreStatus.Warning, coreStatus(view(health = null, sync = "failed"), null))
         assertEquals(CoreStatus.Error, coreStatus(view(ConnectionStatus.Reconnecting(1, 500)), null))
         assertEquals(CoreStatus.Error, coreStatus(view(ConnectionStatus.Incompatible), null))
+    }
+
+    @Test
+    fun coordinatorDownIsAWarningAndBlocksCoordinatorActions() {
+        val down = view(health = Health(status = "ok", wsConnected = false))
+        assertEquals(CoreStatus.Warning, coreStatus(down, null))
+        assertEquals("客户端核心无法连接协调服务器", coreStatusLabel(down, null))
+        assertTrue(coordinatorUnreachable(down))
+        assertTrue(coreReady(down), "Core itself is still usable")
+        assertFalse(coordinatorActionsAvailable(down))
+        val authNeeded = down.copy(state = down.state.copy(accessAuthRequired = true))
+        assertNull(coreBanner(authNeeded, null, "首页"), "no prompt to authenticate while that is impossible")
+
+        val up = view(health = Health(status = "ok", wsConnected = true))
+        assertEquals(CoreStatus.Ok, coreStatus(up, null))
+        assertTrue(coordinatorActionsAvailable(up))
+
+        // Older Cores do not report it: unknown is not "down".
+        val unknown = view(health = Health(status = "ok", wsConnected = null))
+        assertEquals(CoreStatus.Ok, coreStatus(unknown, null))
+        assertTrue(coordinatorActionsAvailable(unknown))
+
+        // Not connected to Core at all: nothing is available, but that is
+        // the Core error, not a coordinator warning.
+        val lost = view(ConnectionStatus.Reconnecting(1, 500), health = Health(status = "ok", wsConnected = false))
+        assertFalse(coordinatorUnreachable(lost))
+        assertFalse(coordinatorActionsAvailable(lost))
+        assertEquals(CoreStatus.Error, coreStatus(lost, null))
     }
 
     @Test
