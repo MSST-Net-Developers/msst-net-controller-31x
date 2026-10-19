@@ -50,7 +50,21 @@ import com.msst.net.state.deviceMnemonic
 import com.msst.net.state.errorMessage
 import com.msst.net.state.pathLabel
 import com.msst.net.state.userMnemonic
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.DpOffset
+import com.msst.net.state.PresetDevice
 import com.msst.net.ui.LocalCompact
+import com.msst.net.ui.components.contextMenuGesture
+import com.msst.net.ui.dialogs.RuleWizardDialog
 import com.msst.net.ui.LocalController
 import com.msst.net.ui.MdiIcons
 import com.msst.net.ui.components.Card
@@ -109,7 +123,7 @@ private fun RoomView(view: ControllerView) {
             ) {
                 items(room.peers, key = { it.deviceId }) { peer ->
                     val self = peer.deviceId == selfId
-                    PeerCard(peer, self, if (self) null else pathLabel(view.state.nodes[peer.deviceId]?.pathMode))
+                    PeerCard(peer, self, if (self) null else pathLabel(view.state.nodes[peer.deviceId]?.pathMode), view.connected)
                 }
             }
         }
@@ -138,10 +152,53 @@ private fun RoomView(view: ControllerView) {
     }
 }
 
+/**
+ * A room member.  Other members have a context menu (secondary click on
+ * desktop / WebUI, long press on touch) with "添加防火墙规则", which opens
+ * the rule wizard with this device as the fixed source.
+ */
 @Composable
-private fun PeerCard(peer: RoomPeer, self: Boolean, path: String?) {
+private fun PeerCard(peer: RoomPeer, self: Boolean, path: String?, connected: Boolean) {
     val c = Msst.colors
     val services = LocalController.current.services
+    val name = peer.displayName ?: peer.deviceId
+    var menuAt by remember { mutableStateOf<DpOffset?>(null) }
+    var addRule by remember { mutableStateOf(false) }
+    val haptics = LocalHapticFeedback.current
+    val density = LocalDensity.current
+    var height by remember { mutableStateOf(0) }
+    val openMenu = { at: Offset ->
+        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        // DropdownMenu is placed below its anchor: offset it to the press.
+        menuAt = with(density) { DpOffset(at.x.toDp(), (at.y - height).toDp()) }
+    }
+    Box(
+        Modifier
+            .onSizeChanged { height = it.height }
+            .contextMenuGesture(enabled = !self) { openMenu(it) }
+            .semantics {
+                if (!self) customActions = listOf(CustomAccessibilityAction("添加防火墙规则") { addRule = true; true })
+            },
+    ) {
+        PeerCardContent(peer, self, path, services)
+        DropdownMenu(menuAt != null, { menuAt = null }, offset = menuAt ?: DpOffset.Zero, containerColor = c.bgPrimary) {
+            DropdownMenuItem(
+                text = { Text("添加防火墙规则", style = MaterialTheme.typography.bodyMedium) },
+                leadingIcon = { MIcon(MdiIcons.ShieldOutline, 18.dp, c.primary) },
+                enabled = connected,
+                onClick = {
+                    menuAt = null
+                    addRule = true
+                },
+            )
+        }
+    }
+    if (addRule) RuleWizardDialog(null, PresetDevice(peer.deviceId, name)) { addRule = false }
+}
+
+@Composable
+private fun PeerCardContent(peer: RoomPeer, self: Boolean, path: String?, services: com.msst.net.platform.PlatformServices) {
+    val c = Msst.colors
     Card(padding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(36.dp).clip(Radius.full).background(c.primaryLighter), contentAlignment = Alignment.Center) {
@@ -156,8 +213,8 @@ private fun PeerCard(peer: RoomPeer, self: Boolean, path: String?) {
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (peer.displayName != null) MonoText(peer.deviceId, color = c.textMuted, small = true)
-                peer.hostname?.let { MonoText(it, color = c.textSecondary, small = true) }
+                if (peer.displayName != null) MonoText(peer.deviceId, color = c.textMuted, small = true, selectable = self)
+                peer.hostname?.let { MonoText(it, color = c.textSecondary, small = true, selectable = self) }
                 peer.ipv4?.let { Text("IPv4 $it", style = MaterialTheme.typography.labelSmall, color = c.textSecondary) }
                 if (!self) {
                     Text(

@@ -18,13 +18,17 @@ enum class TargetMode { Services, Ports }
 data class SourceItem(val kind: String, val id: String)
 data class PortItem(val proto: String, val port: String)
 
+/** A device picked in the room view ("添加防火墙规则"): its canonical ID as
+ *  reported by Core, and the name shown for it. */
+data class PresetDevice(val deviceId: String, val name: String)
+
 /**
  * Form state of the three-step rule wizard (3.0.x).  The request uses
  * Core's 3.0.x-compatible `RuleRequest` format; Core validates it and
  * resolves mnemonics to stable IDs (unresolvable ones are rejected), so
  * nothing here resolves identities or evaluates rules.
  */
-class RuleWizardState(from: FirewallRule? = null) {
+class RuleWizardState(from: FirewallRule? = null, val device: PresetDevice? = null) {
     var step by mutableStateOf(1)
     var sourceMode by mutableStateOf(SourceMode.Group)
     var groupId by mutableStateOf<String?>(null)
@@ -45,7 +49,15 @@ class RuleWizardState(from: FirewallRule? = null) {
 
     val copied = from != null
 
+    /** With a [device] the source is fixed: the wizard starts at the targets. */
+    val firstStep = if (device != null) 2 else 1
+
     init {
+        if (device != null) {
+            sourceMode = SourceMode.Manual
+            sources = listOf(SourceItem("device", device.deviceId))
+            step = 2
+        }
         // Prefill from an existing rule ("复制为新规则").
         if (from != null) {
             val pg = from.permissionGroup
@@ -136,7 +148,7 @@ class RuleWizardState(from: FirewallRule? = null) {
 
     fun back() {
         error = null
-        if (step > 1) step--
+        if (step > firstStep) step--
     }
 
     /** The `create_acl_rule` body. */

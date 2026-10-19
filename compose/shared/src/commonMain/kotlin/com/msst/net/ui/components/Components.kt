@@ -67,7 +67,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerEvent
+import androidx.compose.ui.input.pointer.changedToDownIgnoreConsumed
+import androidx.compose.ui.input.pointer.isSecondaryPressed
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.painter.Painter
@@ -207,15 +213,50 @@ fun InlineNote(text: String, modifier: Modifier = Modifier, selectable: Boolean 
 
 /** Monospace, selectable value (IDs, addresses). */
 @Composable
-fun MonoText(text: String, modifier: Modifier = Modifier, color: Color = Msst.colors.textPrimary, small: Boolean = false) {
-    SelectionContainer(modifier) {
+fun MonoText(
+    text: String,
+    modifier: Modifier = Modifier,
+    color: Color = Msst.colors.textPrimary,
+    small: Boolean = false,
+    selectable: Boolean = true,
+) {
+    val t = @Composable { m: Modifier ->
         Text(
             text,
+            m,
             style = (if (small) MaterialTheme.typography.labelSmall else MaterialTheme.typography.bodySmall).copy(fontFamily = MonoFamily),
             color = color,
         )
     }
+    // Not selectable inside a long-press target: selection would take the gesture.
+    if (selectable) SelectionContainer(modifier) { t(Modifier) } else t(modifier)
 }
+
+/**
+ * Opens a context menu on a secondary click (desktop / WebUI) or a long
+ * press (touch).  [onOpen] gets the position within the element.
+ */
+fun Modifier.contextMenuGesture(enabled: Boolean, onOpen: (Offset) -> Unit): Modifier =
+    if (!enabled) this else pointerInput(onOpen) {
+        awaitEachGesture {
+            // Not awaitFirstDown: it only reports the primary mouse button.
+            var first: PointerEvent
+            do first = awaitPointerEvent() while (first.changes.none { it.changedToDownIgnoreConsumed() })
+            val down = first.changes.first { it.changedToDownIgnoreConsumed() }
+            val secondary = first.buttons.isSecondaryPressed
+            if (secondary || withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) { waitForUpOrCancellation() } == null) {
+                down.consume()
+                onOpen(down.position)
+                // Swallow the rest of the press (up to the release) so it
+                // neither clicks nor dismisses the menu it just opened.
+                while (true) {
+                    val e = awaitPointerEvent()
+                    e.changes.forEach { it.consume() }
+                    if (e.changes.none { it.pressed }) break
+                }
+            }
+        }
+    }
 
 /** Small coloured pill (rule action, record status, …). */
 @Composable

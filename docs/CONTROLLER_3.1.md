@@ -26,7 +26,8 @@ The shared UI talks to a `ControllerPlatform` (`compose/shared/.../platform/Plat
 | | Desktop | Mobile (Android) | WebUI |
 |---|---|---|---|
 | Reaches the library | JNI, Core's system IPC endpoint | JNI, `filesDir/ipc.sock` of the embedded Core | HTTPS API of `msst-net-webui` (which holds the IPC client) |
-| Rule wizard / permission groups | yes | **no** (rules only from interactive authorization and access-log actions) | yes |
+| Rule wizard / permission groups | yes | **no** (rules only from interactive authorization, access-log actions and room members) | yes |
+| Rule for a room member (right click / long press → 添加防火墙规则; source fixed to its device ID) | yes | yes | yes |
 | Interactive authorization | dialog + tray notification | dialog + notification with actions | **no** (server also rejects `auth_decision`) |
 | Access password / IP allowlist | — | — | **required** (`WebSession`) |
 | VPN service control | — | `VpnControl` | — |

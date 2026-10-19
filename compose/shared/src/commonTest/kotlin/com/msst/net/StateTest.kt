@@ -16,6 +16,7 @@ import com.msst.net.platform.ApiException
 import com.msst.net.platform.ControllerBackend
 import com.msst.net.state.ControllerStore
 import com.msst.net.state.OidcFlow
+import com.msst.net.state.PresetDevice
 import com.msst.net.state.RuleWizardState
 import com.msst.net.state.SourceMode
 import com.msst.net.state.TargetMode
@@ -144,6 +145,33 @@ class StateTest {
         assertEquals("pc.alice", principal["id"]!!.jsonPrimitive.content)
         assertNull(r["services"])
         assertNull(r["comment"], "empty comment is not sent")
+    }
+
+    @Test
+    fun wizardForARoomMemberOnlyAsksForTargetsAndComment() {
+        val w = RuleWizardState(device = PresetDevice("device-0123", "Bob 的台式机"))
+        assertEquals(2, w.step)
+        w.back()
+        assertEquals(2, w.step, "the source step cannot be reopened")
+
+        assertFalse(w.next())
+        assertEquals("请选择至少一个服务类型", w.error)
+        w.toggleService("minecraft-java", true)
+        assertTrue(w.next())
+        assertEquals(3, w.step)
+        w.back()
+        assertEquals(2, w.step)
+        assertTrue(w.next())
+
+        w.comment = "  Bob 的 MC  "
+        val r = w.request()
+        val principal = (r["principals"] as JsonArray).single() as JsonObject
+        assertEquals("device", principal["kind"]!!.jsonPrimitive.content)
+        assertEquals("device-0123", principal["id"]!!.jsonPrimitive.content, "Core's device ID, unchanged")
+        assertEquals("minecraft-java", (r["services"] as JsonArray).single().jsonPrimitive.content)
+        assertEquals("allow", r["action"]!!.jsonPrimitive.content)
+        assertEquals("Bob 的 MC", r["comment"]!!.jsonPrimitive.content)
+        assertNull(r["group_id"])
     }
 
     @Test

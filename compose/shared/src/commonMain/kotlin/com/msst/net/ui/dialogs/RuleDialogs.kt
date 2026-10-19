@@ -43,6 +43,7 @@ import com.msst.net.model.ServiceList
 import com.msst.net.model.obj
 import com.msst.net.platform.formatDateTime
 import com.msst.net.platform.query
+import com.msst.net.state.PresetDevice
 import com.msst.net.state.RuleWizardState
 import com.msst.net.state.SourceMode
 import com.msst.net.state.TargetMode
@@ -72,12 +73,12 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun RuleWizardDialog(from: FirewallRule?, onClose: () -> Unit) {
+fun RuleWizardDialog(from: FirewallRule?, device: PresetDevice? = null, onClose: () -> Unit) {
     val ctx = LocalController.current
     val view by ctx.store.view.collectAsState()
     val groups = view?.state?.aclGroups.orEmpty()
     val nodes = view?.state?.nodes?.values.orEmpty()
-    val w = remember { RuleWizardState(from) }
+    val w = remember { RuleWizardState(from, device) }
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
     var categories by remember { mutableStateOf(listOf<ServiceCategory>()) }
@@ -103,12 +104,18 @@ fun RuleWizardDialog(from: FirewallRule?, onClose: () -> Unit) {
         }
     }
 
-    Modal(onClose, if (w.copied) "复制为新规则" else "新建防火墙规则", busy = busy, wide = true, actions = {
-        if (w.step > 1) SecondaryButton("上一步", w::back, enabled = !busy) else SecondaryButton("取消", onClose)
+    val title = when {
+        device != null -> "为 ${device.name} 添加防火墙规则"
+        w.copied -> "复制为新规则"
+        else -> "新建防火墙规则"
+    }
+    Modal(onClose, title, busy = busy, wide = true, actions = {
+        if (w.step > w.firstStep) SecondaryButton("上一步", w::back, enabled = !busy) else SecondaryButton("取消", onClose)
         if (w.step < 3) PrimaryButton("下一步", { w.next() })
         else PrimaryButton(if (busy) "创建中…" else "创建", ::submit, enabled = view?.connected == true, busy = busy)
     }) {
         WizardSteps(w.step)
+        if (device != null) FixedSource(device)
         when (w.step) {
             1 -> {
                 StepDesc("选择此规则匹配的来源")
@@ -211,6 +218,24 @@ private fun WizardSteps(step: Int) {
                 Spacer(Modifier.width(6.dp))
                 Text(label, style = MaterialTheme.typography.labelSmall.copy(fontWeight = if (step == n) FontWeight.SemiBold else FontWeight.Normal), color = if (step >= n) c.primary else c.textMuted)
             }
+        }
+    }
+}
+
+/** The source of a rule started from a room member: shown, not editable. */
+@Composable
+private fun FixedSource(device: PresetDevice) {
+    val c = Msst.colors
+    Row(
+        Modifier.fillMaxWidth().clip(Radius.md).background(c.bgSecondary).border(1.dp, c.borderLight, Radius.md)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MIcon(MdiIcons.Monitor, 16.dp, c.primary)
+        Spacer(Modifier.width(8.dp))
+        Column(Modifier.weight(1f)) {
+            Text("来源设备：${device.name}", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold), color = c.textPrimary)
+            com.msst.net.ui.components.MonoText(device.deviceId, color = c.textMuted, small = true)
         }
     }
 }
