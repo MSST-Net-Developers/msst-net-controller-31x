@@ -30,9 +30,10 @@ The shared UI talks to a `ControllerPlatform` (`compose/shared/.../platform/Plat
 | Interactive authorization | dialog + tray notification | dialog + notification with actions | **no** (server also rejects `auth_decision`) |
 | Access password / IP allowlist | — | — | **required** (`WebSession`) |
 | VPN service control | — | `VpnControl` | — |
+| Per-app exclusion | — | `AppExclusion` (`addDisallowedApplication`; list in app preferences, not Core) | — |
 
 Differences are declared in `ControllerFeatures` and optional services
-(`vpn`, `session`, `notifier`), not by platform checks in screens.
+(`vpn`, `appExclusion`, `session`, `notifier`), not by platform checks in screens.
 
 Protocol: built against `msst-ipc-protocol` 0.4; Cores speaking 0.1–0.3
 still work (features they lack are disabled with an explanation).  With a

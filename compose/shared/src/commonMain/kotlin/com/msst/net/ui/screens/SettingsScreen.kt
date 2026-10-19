@@ -41,6 +41,7 @@ import com.msst.net.model.TrafficEntry
 import com.msst.net.model.TrafficStats
 import com.msst.net.model.UiNotice
 import com.msst.net.model.obj
+import com.msst.net.platform.AppExclusion
 import com.msst.net.platform.WebSession
 import com.msst.net.platform.formatTime
 import com.msst.net.platform.query
@@ -72,6 +73,7 @@ import com.msst.net.ui.components.Select
 import com.msst.net.ui.components.Tag
 import com.msst.net.ui.components.TextInput
 import com.msst.net.ui.components.ToggleRow
+import com.msst.net.ui.dialogs.AppExclusionDialog
 import com.msst.net.ui.dialogs.LogDialog
 import com.msst.net.ui.theme.Msst
 import kotlinx.coroutines.delay
@@ -87,6 +89,7 @@ fun SettingsScreen() {
     ) {
         Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             IdentityCard()
+            ctx.platform.appExclusion?.let { AppExclusionCard(it) }
             ctx.platform.session?.let { RemoteAccessCard(it) }
             DiagnosticsCard()
         }
@@ -166,6 +169,28 @@ private fun IdentityCard() {
             )
         }
     }
+}
+
+// ── Per-app exclusion (Android) ──────────────────────────────────────────────
+
+@Composable
+private fun AppExclusionCard(exclusion: AppExclusion) {
+    val excluded by exclusion.excluded.collectAsState()
+    var open by remember { mutableStateOf(false) }
+    Card {
+        SectionHeader("分应用代理", "选择不经过 MSST-Net 的应用")
+        Divider()
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                if (excluded.isEmpty()) "所有应用都经过 MSST-Net" else "已排除 ${excluded.size} 个应用",
+                Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+                color = Msst.colors.textSecondary,
+            )
+            SecondaryButton("选择应用", { open = true }, icon = MdiIcons.Cellphone)
+        }
+    }
+    if (open) AppExclusionDialog(exclusion) { open = false }
 }
 
 // ── WebUI remote access ──────────────────────────────────────────────────────

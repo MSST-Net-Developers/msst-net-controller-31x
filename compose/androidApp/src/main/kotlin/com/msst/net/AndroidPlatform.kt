@@ -27,6 +27,7 @@ class AndroidPlatform(private val context: Context) : ControllerPlatform {
     override val variant = ControllerVariant.Mobile
     override val backend: ControllerBackend = JniBackend(MsstVpnService.socketPath(context))
     override val vpn = AndroidVpnControl(context)
+    override val appExclusion = AndroidAppExclusion(context)
 
     override val services = object : PlatformServices {
         override fun openUrl(url: String) {

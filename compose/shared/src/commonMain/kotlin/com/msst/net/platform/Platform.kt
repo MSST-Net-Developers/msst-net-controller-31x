@@ -13,6 +13,7 @@ import com.msst.net.model.ControllerView
 import com.msst.net.model.IpcRequest
 import com.msst.net.model.RetryOutcome
 import com.msst.net.model.UiNotice
+import androidx.compose.ui.graphics.ImageBitmap
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.JsonElement
@@ -128,6 +129,30 @@ interface VpnControl {
     fun wake()
 }
 
+/** An app installed on this device (per-app exclusion). */
+data class DeviceApp(
+    val packageName: String,
+    val label: String,
+    val system: Boolean,
+    val icon: ImageBitmap?,
+)
+
+/**
+ * Per-app exclusion from MSST-Net (Android `VpnService` per-app VPN).  The
+ * list belongs to this device's VPN interface, not to Core: excluded apps'
+ * traffic never enters the TUN, so Core never sees it.
+ */
+interface AppExclusion {
+    /** Package names currently excluded. */
+    val excluded: StateFlow<Set<String>>
+
+    /** Apps the user can choose from (launchable apps, not this one). */
+    suspend fun apps(): List<DeviceApp>
+
+    /** Save the list and apply it; a running VPN interface is rebuilt. */
+    suspend fun setExcluded(packages: Set<String>)
+}
+
 /** WebUI access control: the password session and the IP allowlist,
  *  enforced by the WebUI server. */
 interface WebSession {
@@ -153,6 +178,8 @@ interface ControllerPlatform {
     val notifier: AccessRequestNotifier? get() = null
     /** Present when this Controller hosts Core in a local VPN service. */
     val vpn: VpnControl? get() = null
+    /** Present when apps can be excluded from MSST-Net (Android). */
+    val appExclusion: AppExclusion? get() = null
     /** Present when access needs a password (WebUI). */
     val session: WebSession? get() = null
 }

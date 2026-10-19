@@ -9,6 +9,7 @@ import com.msst.net.model.FirewallRule
 import com.msst.net.model.PermissionGroup
 import com.msst.net.model.ProtocolPort
 import com.msst.net.model.SystemState
+import com.msst.net.platform.DeviceApp
 
 /** Overall status shown in the status bar. */
 enum class CoreStatus { Ok, Warning, Error, Checking }
@@ -209,3 +210,17 @@ fun userMnemonic(v: ControllerView?): String = v?.state?.health?.let { it.userHa
 /** Display name for a device ID from Core's node list. */
 fun deviceName(state: SystemState?, id: String): String =
     state?.nodes?.get(id)?.let { it.displayName ?: it.hostname } ?: id
+
+/**
+ * Apps shown in the per-app exclusion picker: matching [query] (label or
+ * package), system apps only when [showSystem] — but an app that is already
+ * selected is always shown so it can be unselected.  Selected first, then
+ * by label.
+ */
+fun filterApps(apps: List<DeviceApp>, query: String, showSystem: Boolean, selected: Set<String>): List<DeviceApp> {
+    val q = query.trim()
+    return apps
+        .filter { it.packageName in selected || showSystem || !it.system }
+        .filter { q.isEmpty() || it.label.contains(q, ignoreCase = true) || it.packageName.contains(q, ignoreCase = true) }
+        .sortedWith(compareBy<DeviceApp>({ it.packageName !in selected }, { it.label.lowercase() }))
+}

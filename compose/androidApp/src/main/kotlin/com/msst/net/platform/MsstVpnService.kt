@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -13,6 +14,7 @@ import android.net.NetworkRequest
 import android.net.VpnService
 import android.os.ParcelFileDescriptor
 import android.util.Log
+import com.msst.net.AndroidAppExclusion
 import com.msst.net.MainActivity
 import com.msst.net.jni.MsstCore
 import com.msst.net.platform.VpnControl.State
@@ -46,6 +48,8 @@ class MsstVpnService : VpnService() {
         const val ACTION_STOP = "com.msst.net.STOP_VPN"
         const val ACTION_SLEEP = "com.msst.net.SLEEP_VPN"
         const val ACTION_WAKE = "com.msst.net.WAKE_VPN"
+        /** The excluded-app list changed: rebuild a running VPN interface. */
+        const val ACTION_REAPPLY = "com.msst.net.REAPPLY_VPN"
 
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "msst_vpn"
@@ -97,6 +101,7 @@ class MsstVpnService : VpnService() {
             ACTION_STOP -> scope.launch { lifecycle.withLock { stop() } }
             ACTION_SLEEP -> scope.launch { lifecycle.withLock { sleep() } }
             ACTION_WAKE -> scope.launch { lifecycle.withLock { wake() } }
+            ACTION_REAPPLY -> scope.launch { lifecycle.withLock { reapply() } }
         }
         return START_STICKY
     }
@@ -169,7 +174,21 @@ class MsstVpnService : VpnService() {
         notifyStatus("已连接")
     }
 
-    /** Establish a VPN interface for the MSST ranges and hand it to Core. */
+    /** Rebuild the running interface (new excluded-app list); Core keeps
+     *  running and gets the new TUN. */
+    private fun reapply() {
+        if (_state.value != State.Running) return
+        MsstCore.nativeDetachTun()
+        val err = attachNewTun()
+        if (err != null) {
+            MsstCore.nativeStopCore()
+            return fail(err)
+        }
+        Log.i(TAG, "VPN interface rebuilt")
+    }
+
+    /** Establish a VPN interface for the MSST ranges and hand it to Core.
+     *  Apps the user excluded (settings) bypass it. */
     private fun attachNewTun(): String? {
         val pfd: ParcelFileDescriptor = Builder()
             .setSession("MSST-Net")
@@ -183,6 +202,16 @@ class MsstVpnService : VpnService() {
             .setMtu(1420)
             .setBlocking(false)
             .setConfigureIntent(activityIntent())
+            .apply {
+                AndroidAppExclusion.load(this@MsstVpnService).forEach { pkg ->
+                    // An app uninstalled since it was chosen is skipped.
+                    try {
+                        addDisallowedApplication(pkg)
+                    } catch (_: PackageManager.NameNotFoundException) {
+                        Log.i(TAG, "excluded app not installed: $pkg")
+                    }
+                }
+            }
             .establish()
             ?: return "无法建立 VPN 接口（VPN 权限可能已被撤销）"
         // Ownership of the fd passes to Core.

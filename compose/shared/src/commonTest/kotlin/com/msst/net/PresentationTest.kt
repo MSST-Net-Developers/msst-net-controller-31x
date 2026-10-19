@@ -11,6 +11,8 @@ import com.msst.net.model.SyncState
 import com.msst.net.model.SystemState
 import com.msst.net.platform.ControllerFeatures
 import com.msst.net.platform.ControllerVariant
+import com.msst.net.platform.DeviceApp
+import com.msst.net.state.filterApps
 import com.msst.net.state.BannerKind
 import com.msst.net.state.CoreStatus
 import com.msst.net.state.coreBanner
@@ -133,6 +135,20 @@ class PresentationTest {
         assertFalse(validHandle("Alice"))
         assertEquals("abjust", normalizeNamespace(" ABjust.msst.net "))
         assertNull(normalizeNamespace("-bad"))
+    }
+
+    @Test
+    fun appPickerFiltersAndKeepsSelectedAppsVisible() {
+        val apps = listOf(
+            DeviceApp("com.example.chat", "Chat", system = false, icon = null),
+            DeviceApp("com.android.settings", "Settings", system = true, icon = null),
+            DeviceApp("com.example.browser", "Browser", system = false, icon = null),
+        )
+        assertEquals(listOf("Browser", "Chat"), filterApps(apps, "", false, emptySet()).map { it.label })
+        // A selected system app stays visible (and first) so it can be unselected.
+        assertEquals(listOf("Settings", "Browser", "Chat"), filterApps(apps, "", false, setOf("com.android.settings")).map { it.label })
+        assertEquals(listOf("com.example.chat"), filterApps(apps, "CHAT", true, emptySet()).map { it.packageName })
+        assertEquals(listOf("Settings"), filterApps(apps, "android", true, emptySet()).map { it.label })
     }
 
     @Test
