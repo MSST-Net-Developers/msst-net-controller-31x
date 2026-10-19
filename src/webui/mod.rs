@@ -1,5 +1,6 @@
-//! WebUI backend — serves the Controller frontend over HTTPS for remote /
-//! headless management, with the 3.0.x security model:
+//! WebUI backend — serves the Controller frontend (the Compose web build,
+//! `compose/webApp`) over HTTPS for remote / headless management, with the
+//! 3.0.x security model:
 //!
 //! - every request: source IP must be in `allowed_cidrs` (config.toml)
 //! - everything except login and static files: valid session cookie
@@ -15,9 +16,13 @@
 //! | `GET /api/info` | WebUI version and protocol version |
 //! | `GET/PUT /api/config` | allowed CIDRs |
 //! | `GET /api/view` | connection status, diagnostics, Core state |
-//! | `POST /api/ipc` | any `IpcRequest` (`{ "type", "params" }`) |
+//! | `POST /api/ipc` | any `IpcRequest` (`{ "type", "params" }`) except `auth_decision` |
 //! | `POST /api/acl/clear` | delete all firewall rules |
-//! | `GET /ws/events` | `UiNotice` JSON messages (re-read `/api/view`) |
+//! | `GET /ws/events` | `UiNotice::Changed` messages (re-read `/api/view`) |
+//!
+//! The WebUI does not take part in interactive authorization: access
+//! requests are answered on the device itself (desktop or mobile
+//! Controller), or time out in Core.
 
 pub mod auth;
 pub mod config;
@@ -40,7 +45,7 @@ use serde_json::json;
 
 use crate::error::{ControllerError, UiError};
 use crate::ipc::client::IpcClient;
-use crate::notify::spawn_notifier;
+use crate::notify::{UiNotice, spawn_notifier};
 use auth::SessionStore;
 use config::Config;
 
@@ -212,6 +217,15 @@ async fn ipc(State(state): State<WebState>, body: axum::body::Bytes) -> Response
             return (StatusCode::BAD_REQUEST, Json(err)).into_response();
         }
     };
+    if matches!(request, IpcRequest::AuthDecision { .. }) {
+        let err = UiError {
+            category: "request",
+            code: "unsupported".into(),
+            message: "WebUI 不支持交互式授权，请在本机的控制器中处理访问请求。".into(),
+            detail: None,
+        };
+        return (StatusCode::FORBIDDEN, Json(err)).into_response();
+    }
     match state.client.command(request).await {
         Ok(v) => Json(v).into_response(),
         Err(e) => error_response(e),
@@ -252,8 +266,12 @@ async fn ws_events(
 
 async fn forward_notices(mut socket: WebSocket, client: IpcClient) {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    // Access-request notices are for interactive authorization, which the
+    // WebUI does not handle.
     let notifier = spawn_notifier(&client, move |n| {
-        let _ = tx.send(n);
+        if matches!(n, UiNotice::Changed) {
+            let _ = tx.send(n);
+        }
     });
     loop {
         tokio::select! {
@@ -276,7 +294,7 @@ async fn forward_notices(mut socket: WebSocket, client: IpcClient) {
 // ── Static frontend ──────────────────────────────────────────────────────────
 
 #[derive(rust_embed::RustEmbed)]
-#[folder = "frontend/build"]
+#[folder = "compose/webApp/build/dist/wasmJs/productionExecutable"]
 struct Frontend;
 
 async fn static_handler(req: Request) -> Response {

@@ -1,0 +1,372 @@
+package com.msst.net.ui.screens
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import com.msst.net.model.ControllerView
+import com.msst.net.model.Req
+import com.msst.net.model.RoomPeer
+import com.msst.net.platform.VpnControl
+import com.msst.net.state.CoreStatus
+import com.msst.net.state.attempt
+import com.msst.net.state.coreStatus
+import com.msst.net.state.coreStatusLabel
+import com.msst.net.state.deviceMnemonic
+import com.msst.net.state.errorMessage
+import com.msst.net.state.pathLabel
+import com.msst.net.state.userMnemonic
+import com.msst.net.ui.LocalController
+import com.msst.net.ui.MdiIcons
+import com.msst.net.ui.components.Card
+import com.msst.net.ui.components.CopyButton
+import com.msst.net.ui.components.Dot
+import com.msst.net.ui.components.EmptyState
+import com.msst.net.ui.components.InlineError
+import com.msst.net.ui.components.LinkButton
+import com.msst.net.ui.components.MIcon
+import com.msst.net.ui.components.MonoText
+import com.msst.net.ui.components.Notice
+import com.msst.net.ui.components.PrimaryButton
+import com.msst.net.ui.components.SecondaryButton
+import com.msst.net.ui.components.SmallIconButton
+import com.msst.net.ui.components.SpinningIcon
+import com.msst.net.ui.dialogs.CreateRoomDialog
+import com.msst.net.ui.dialogs.JoinRoomDialog
+import com.msst.net.ui.dialogs.OidcDialog
+import com.msst.net.ui.theme.Msst
+import com.msst.net.ui.theme.Radius
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+const val WEBSITE = "https://msst-net.msst2031.cn"
+
+@Composable
+fun HomeScreen() {
+    val ctx = LocalController.current
+    val view by ctx.store.view.collectAsState()
+    val room = view?.state?.room
+    if (room != null && room.inRoom) RoomView(view!!) else ModePage(view)
+}
+
+// ── In a room ────────────────────────────────────────────────────────────────
+
+@Composable
+private fun RoomView(view: ControllerView) {
+    val ctx = LocalController.current
+    val room = view.state.room
+    val selfId = view.state.health?.deviceId
+    var leaving by remember { mutableStateOf(false) }
+    var leaveError by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    Column(Modifier.fillMaxSize()) {
+        if (room.peers.isEmpty()) {
+            EmptyState("暂无成员信息", Modifier.weight(1f))
+        } else {
+            LazyColumn(
+                Modifier.weight(1f).fillMaxWidth(),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(room.peers, key = { it.deviceId }) { peer ->
+                    val self = peer.deviceId == selfId
+                    PeerCard(peer, self, if (self) null else pathLabel(view.state.nodes[peer.deviceId]?.pathMode))
+                }
+            }
+        }
+        Column(
+            Modifier.fillMaxWidth().background(Msst.colors.bgPrimary).padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            leaveError?.let { InlineError("退出失败：$it") }
+            SecondaryButton(
+                if (leaving) "退出中…" else "退出房间",
+                onClick = {
+                    val id = room.roomId ?: return@SecondaryButton
+                    leaving = true
+                    leaveError = null
+                    scope.launch {
+                        // The room view disappears once Core's room state says so.
+                        leaveError = attempt { ctx.backend.request(Req.leaveRoom(id)) }.errorMessage
+                        leaving = false
+                    }
+                },
+                enabled = !leaving && view.connected,
+                danger = true,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PeerCard(peer: RoomPeer, self: Boolean, path: String?) {
+    val c = Msst.colors
+    val services = LocalController.current.services
+    Card(padding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(36.dp).clip(Radius.full).background(c.primaryLighter), contentAlignment = Alignment.Center) {
+                MIcon(MdiIcons.Monitor, 18.dp, c.primary)
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    (peer.displayName ?: peer.deviceId) + if (self) "（本机）" else "",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = c.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (peer.displayName != null) MonoText(peer.deviceId, color = c.textMuted, small = true)
+                peer.hostname?.let { MonoText(it, color = c.textSecondary, small = true) }
+                peer.ipv4?.let { Text("IPv4 $it", style = MaterialTheme.typography.labelSmall, color = c.textSecondary) }
+                if (!self) {
+                    Text(
+                        "路径：${path ?: "未知"}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (path == null) c.textMuted else c.textSecondary,
+                    )
+                }
+            }
+            peer.hostname?.let { CopyButton(it, services, "复制主机名") }
+        }
+    }
+}
+
+// ── Not in a room ────────────────────────────────────────────────────────────
+
+@Composable
+private fun ModePage(view: ControllerView?) {
+    val ctx = LocalController.current
+    val backendError by ctx.store.backendError.collectAsState()
+    val status = coreStatus(view, backendError)
+    val ready = status == CoreStatus.Ok
+    val health = if (view?.connected == true) view.state.health else null
+    var dialog by remember { mutableStateOf<String?>(null) }
+    var notReadyHint by remember { mutableStateOf(false) }
+    LaunchedEffect(notReadyHint) {
+        if (notReadyHint) {
+            delay(2_500)
+            notReadyHint = false
+        }
+    }
+    fun requireCore(open: String) {
+        if (ready) dialog = open else notReadyHint = true
+    }
+
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+            Column(
+                Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                ctx.platform.vpn?.let { VpnCard(it) }
+
+                Card(Modifier.widthIn(max = 420.dp).fillMaxWidth()) {
+                    ModeHeader(MdiIcons.AccountMultipleOutline, "使用房间模式（推荐）")
+                    if (health != null && !health.isAuthenticated && ready) Notice("当前以免认证身份接入，仅可使用房间模式。")
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        BigAction("创建房间", MdiIcons.Plus, primary = true, available = ready, Modifier.weight(1f)) { requireCore("create") }
+                        BigAction("加入房间", MdiIcons.Login, primary = false, available = ready, Modifier.weight(1f)) { requireCore("join") }
+                    }
+                }
+
+                if (health?.isAuthenticated == true) {
+                    Card(Modifier.widthIn(max = 420.dp).fillMaxWidth()) {
+                        ModeHeader(MdiIcons.Lan, "使用大内网模式")
+                        Label("作为客户端")
+                        val dev = deviceMnemonic(view)
+                        if (dev.isEmpty()) Pending("核心就绪后自动加载")
+                        else {
+                            IdRow("设备", dev)
+                            IdRow("用户", userMnemonic(view))
+                        }
+                        Label("作为服务器")
+                        val host = health.deviceHostname
+                        if (host != null) IdRow(null, host)
+                        else Pending("ezPlay 主机名（.ezplay.msst.net）将在首次成功连接协调服务器后自动分配")
+                    }
+                }
+
+                if (notReadyHint) InlineError("客户端核心未就绪，无法创建或加入房间")
+                LinkButton("项目官网 · 使用说明", { ctx.services.openUrl(WEBSITE) }, MdiIcons.BookOpenOutline, color = Msst.colors.textTertiary)
+            }
+            StatusBar(view, backendError)
+        }
+        FloatingActionButton(
+            onClick = { dialog = "auth" },
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = 64.dp).size(48.dp),
+            containerColor = Msst.colors.primary,
+            contentColor = Msst.colors.textInverse,
+            shape = Radius.full,
+        ) { MIcon(MdiIcons.AccountKeyOutline, 22.dp, contentDescription = "接入认证") }
+    }
+
+    when (dialog) {
+        "create" -> CreateRoomDialog { dialog = null }
+        "join" -> JoinRoomDialog { dialog = null }
+        "auth" -> OidcDialog { dialog = null }
+    }
+}
+
+@Composable
+private fun ModeHeader(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        MIcon(icon, 18.dp, Msst.colors.primary)
+        Text(title, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold), color = Msst.colors.textPrimary)
+    }
+}
+
+@Composable
+private fun Label(text: String) =
+    Text(text, Modifier.padding(top = 4.dp), style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold), color = Msst.colors.textTertiary)
+
+@Composable
+private fun Pending(text: String) = Text(text, style = MaterialTheme.typography.labelSmall, color = Msst.colors.textMuted)
+
+@Composable
+private fun IdRow(key: String?, value: String) {
+    val c = Msst.colors
+    Row(
+        Modifier.fillMaxWidth().clip(Radius.md).background(c.bgSecondary).border(1.dp, c.borderLight, Radius.md)
+            .padding(start = 14.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (key != null) Text(key, Modifier.width(36.dp), style = MaterialTheme.typography.labelSmall, color = c.textMuted)
+        MonoText(value, Modifier.weight(1f))
+        CopyButton(value, LocalController.current.services, if (key != null) "复制${key}标识" else "复制主机名", 13.dp)
+    }
+}
+
+@Composable
+private fun BigAction(
+    text: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    primary: Boolean,
+    available: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    val c = Msst.colors
+    val bg = if (primary) c.primary else c.bgPrimary
+    val fg = if (primary) c.textInverse else c.primary
+    Column(
+        modifier.clip(Radius.lg).background(bg.copy(alpha = if (available) 1f else 0.45f))
+            .border(1.dp, (if (primary) c.primary else c.borderPrimary).copy(alpha = if (available) 1f else 0.45f), Radius.lg)
+            .clickable(onClick = onClick)
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        MIcon(icon, 22.dp, fg.copy(alpha = if (available) 1f else 0.6f))
+        Text(text, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold), color = fg.copy(alpha = if (available) 1f else 0.6f))
+    }
+}
+
+@Composable
+private fun StatusBar(view: ControllerView?, backendError: String?) {
+    val ctx = LocalController.current
+    val c = Msst.colors
+    val retrying by ctx.store.retrying.collectAsState()
+    val status = coreStatus(view, backendError)
+    val (dot, text) = when (status) {
+        CoreStatus.Ok -> c.successDot to c.success
+        CoreStatus.Warning -> c.warningDot to c.warning
+        CoreStatus.Error -> c.errorDot to c.error
+        CoreStatus.Checking -> c.borderMedium to c.textMuted
+    }
+    Row(
+        Modifier.fillMaxWidth().background(c.bgPrimary).padding(start = 24.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("客户端核心状态：", style = MaterialTheme.typography.bodySmall, color = c.textTertiary)
+        Dot(dot)
+        Text(
+            coreStatusLabel(view, backendError),
+            Modifier.weight(1f),
+            style = MaterialTheme.typography.bodySmall.copy(fontWeight = if (status == CoreStatus.Checking) FontWeight.Normal else FontWeight.Medium),
+            color = text,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Box {
+            SmallIconButton(
+                MdiIcons.Refresh,
+                if (view?.connected == true) "重新读取客户端核心状态" else "立即重试连接客户端核心",
+                onClick = ctx.store::retry,
+                enabled = !retrying,
+            )
+            if (retrying) Box(Modifier.align(Alignment.Center)) { SpinningIcon(MdiIcons.Refresh, true, 16.dp, c.primary) }
+        }
+    }
+}
+
+// ── Android: the VPN service hosting Core ────────────────────────────────────
+
+@Composable
+private fun VpnCard(vpn: VpnControl) {
+    val state by vpn.state.collectAsState()
+    val c = Msst.colors
+    Card(Modifier.widthIn(max = 420.dp).fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val (dot, label) = when (val s = state) {
+                VpnControl.State.Running -> c.successDot to "VPN 服务运行中"
+                VpnControl.State.Sleeping -> c.warningDot to "VPN 服务已休眠（客户端核心仍在运行）"
+                VpnControl.State.Starting -> c.borderMedium to "VPN 服务启动中…"
+                VpnControl.State.Stopped -> c.borderMedium to "VPN 服务未启动"
+                is VpnControl.State.Failed -> c.errorDot to "VPN 服务启动失败：${s.message}"
+            }
+            Dot(dot)
+            Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = if (state is VpnControl.State.Failed) c.error else c.textSecondary)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            when (state) {
+                VpnControl.State.Stopped, is VpnControl.State.Failed ->
+                    PrimaryButton("启动 MSST-Net 客户端", vpn::start, Modifier.fillMaxWidth(), icon = MdiIcons.Power)
+                VpnControl.State.Starting -> PrimaryButton("启动中…", {}, Modifier.fillMaxWidth(), busy = true)
+                VpnControl.State.Running -> {
+                    SecondaryButton("休眠", vpn::sleep, Modifier.weight(1f), icon = MdiIcons.Sleep)
+                    SecondaryButton("停止", vpn::stop, Modifier.weight(1f), icon = MdiIcons.Power, danger = true)
+                }
+                VpnControl.State.Sleeping -> {
+                    PrimaryButton("恢复", vpn::wake, Modifier.weight(1f), icon = MdiIcons.Play)
+                    SecondaryButton("停止", vpn::stop, Modifier.weight(1f), icon = MdiIcons.Power, danger = true)
+                }
+            }
+        }
+    }
+}

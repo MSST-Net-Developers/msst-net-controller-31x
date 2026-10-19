@@ -1,13 +1,9 @@
 /target
 
-# Frontend
-frontend/node_modules/
-frontend/.svelte-kit/
-frontend/build/
-frontend/dist/
-
-# Tauri generated
-frontend/src-tauri/gen/
+# Kotlin Multiplatform Controller (see compose/.gitignore)
+compose/rust/target/
+compose/androidApp/src/main/jniLibs/
+compose/desktopApp/appResources/
 
 # IDE
 .idea/

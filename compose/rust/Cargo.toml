@@ -1,0 +1,46 @@
+# JNI bridge between the Kotlin Multiplatform Controller (compose/) and this
+# repository's Controller library (IPC client, state sync, change
+# notifications).  Used by both JVM targets:
+#
+# - desktop: `cargo build --release` — the Controller half only; Core runs
+#   as its own privileged service.
+# - Android: `--features embedded-core` (build-android.sh) — also starts the
+#   embedded Core inside the VpnService.
+#
+# Standalone workspace so Android cross-compilation stays separate from the
+# desktop workspace.
+[workspace]
+
+[package]
+name = "msst-jni"
+version = "3.1.0-alpha.2"
+edition = "2024"
+license = "MIT"
+
+[lib]
+name = "msst_jni"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+# Core's embedded lifecycle API (msst-net-core-31x/src/embedded.rs).
+embedded-core = ["dep:msst-net-core"]
+
+[dependencies]
+msst-net-core = { path = "../../../msst-net-core-31x", optional = true }
+# The Controller library: IPC client, view, change notifications.
+msst-net-controller = { path = "../.." }
+msst-ipc-protocol = { path = "../../../msst-net-core-31x/crates/msst-ipc-protocol" }
+
+jni = "0.21"
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "net", "macros"] }
+serde_json = "1"
+tracing = "0.1"
+
+[profile.release]
+# unwind (not abort) so JNI entry points can report panics as errors
+panic = "unwind"
+lto = "fat"
+codegen-units = 1
+opt-level = "z"
+strip = true

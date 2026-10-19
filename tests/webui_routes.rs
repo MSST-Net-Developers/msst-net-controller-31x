@@ -185,3 +185,14 @@ async fn cross_origin_websocket_rejected() {
     let (status, _, _) = call(&e.state, [127, 0, 0, 1], req).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
+
+#[tokio::test]
+async fn interactive_authorization_is_not_offered() {
+    let e = env("authdecision");
+    let cookie = login(&e.state).await;
+    let body = json!({ "type": "auth_decision", "params": { "request_id": "r1", "decision": "allow_once" } });
+    let (status, _, v) = call(&e.state, [127, 0, 0, 1], post("/api/ipc", body, Some(&cookie))).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(v["code"], "unsupported");
+    e.state.client.shutdown();
+}

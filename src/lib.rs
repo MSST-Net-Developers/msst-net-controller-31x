@@ -10,14 +10,11 @@ pub mod notify;
 pub mod ops;
 pub mod state;
 
-#[cfg(feature = "tauri")]
-pub mod tauri_commands;
-
 #[cfg(feature = "webui")]
 pub mod webui;
 
 pub use error::ControllerError;
 
-/// Release codename, shared by every 3.1.x release (Tauri/WebUI and the
-/// Android Controller use the same name).
+/// Release codename, shared by every 3.1.x release (all Controller variants
+/// use the same name; see `BuildInfo` in compose/shared).
 pub const CODENAME: &str = "微分方程";

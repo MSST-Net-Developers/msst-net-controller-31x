@@ -3,19 +3,36 @@
 ## Structure
 
 ```text
-src/                 Controller library (shared by every front end)
+src/                 Controller library (IPC client, state sync, notices) — used by every variant
   ipc/               transport, handshake, IpcClient (reconnect + resync), FakeCore for tests
   state/             StateStore: the view of Core state, built only from Core queries/events
   notify.rs          debounced change notices for UIs
   ops.rs             multi-request operations (clear rules)
-  tauri_commands.rs  Tauri bridge: get_view / ipc_request / clear_acl_rules
-  webui/             WebUI server (3.0.x security model)
+  webui/             WebUI server (3.0.x security model; serves compose/webApp)
   bin/msst-net-webui.rs
-frontend/            SvelteKit UI for desktop (Tauri) and WebUI (browser)
-  src-tauri/         Tauri shell: notifications, log export, window
-android/             Android app (Compose) + rust/ JNI glue (embedded Core + this library)
+compose/             Kotlin Multiplatform / Compose Multiplatform Controller (one UI for all variants)
+  shared/            common UI, presentation state, model; `jniMain` = JNI backend (Android + desktop)
+  androidApp/        Android: Activity, VpnService (embedded Core), notifications
+  desktopApp/        desktop (JVM): window, tray notifications
+  webApp/            WebUI frontend (wasm), talks to msst-net-webui over HTTPS
+  rust/              JNI crate `msst_jni`: this library (+ EmbeddedCore with `--features embedded-core`)
 docs/PROTOCOL_PROPOSALS_3.1.md   issues found in Core / protocol (not changed here)
 ```
+
+### Variants
+
+The shared UI talks to a `ControllerPlatform` (`compose/shared/.../platform/Platform.kt`):
+
+| | Desktop | Mobile (Android) | WebUI |
+|---|---|---|---|
+| Reaches the library | JNI, Core's system IPC endpoint | JNI, `filesDir/ipc.sock` of the embedded Core | HTTPS API of `msst-net-webui` (which holds the IPC client) |
+| Rule wizard / permission groups | yes | **no** (rules only from quick actions: access log, room mode) | yes |
+| Interactive authorization | dialog + tray notification | dialog + notification with actions | **no** (server also rejects `auth_decision`) |
+| Access password / IP allowlist | — | — | **required** (`WebSession`) |
+| VPN service control | — | `VpnControl` | — |
+
+Differences are declared in `ControllerFeatures` and optional services
+(`vpn`, `session`, `notifier`), not by platform checks in screens.
 
 Protocol: built against `msst-ipc-protocol` 0.4; Cores speaking 0.1–0.3
 still work (features they lack are disabled with an explanation).  With a
@@ -36,13 +53,15 @@ state.
 | Target | Command |
 |---|---|
 | Library + tests | `cargo test --features webui` |
-| Frontend | `cd frontend && pnpm install && pnpm run check && pnpm run build` |
-| Desktop app | `cd frontend && pnpm tauri build` |
-| WebUI | build the frontend, then `cargo build --release --features webui --bin msst-net-webui` (the frontend is embedded) |
-| Android | `android/rust/build.sh` (needs cargo-ndk + NDK), then `cd android && ./gradlew assembleRelease` |
+| JNI crate tests | `cd compose/rust && cargo test` |
+| Kotlin tests | `cd compose && ./gradlew :shared:jvmTest :shared:testAndroidHostTest` (wasm: `CHROME_BIN=… ./gradlew :shared:wasmJsTest`) |
+| Desktop app | `compose/rust/build-desktop.sh`, then `cd compose && ./gradlew :desktopApp:run` (or `packageDeb` / `packageMsi`) |
+| WebUI | `cd compose && ./gradlew :webApp:wasmJsBrowserDistribution`, then `cargo build --release --features webui --bin msst-net-webui` (the web build is embedded) |
+| Android | `compose/rust/build-android.sh` (needs cargo-ndk + NDK), then `cd compose && ./gradlew :androidApp:assembleRelease` |
 
-The Android glue and the desktop crate depend on the Core repo by path
-(`../msst-net-core-31x`), as before.
+The JNI crate depends on the Core repo by path (`../msst-net-core-31x`), as
+before.  UI font: 寒蝉全圆体 (ChillRound, SIL OFL 1.1), bundled as Compose
+resources.
 
 ### WebUI
 
@@ -76,7 +95,7 @@ VPN".
 | Android "撤销授权" only showed a hint | Deletes the deciding rule | No fake controls |
 | Android OIDC treated any user ID as authenticated | Uses Core's `is_authenticated` | Anonymous users also have IDs |
 | Display names auto-generated and saved on startup | Not written automatically; shown as Core has them | No hidden writes to Core |
-| WebUI had no interactive authorization | WebUI shows access requests too | Same UI everywhere |
+| WebUI had no interactive authorization | Still none (requests are answered on the device or time out in Core) | Product decision for 3.1 |
 | Android notifications only while the UI was open | Posted from the Application (also with always-on VPN) | Reliability |
 
 ## Verification status
@@ -88,11 +107,20 @@ VPN".
 - Protocol 0.4 behaviour is tested against FakeCore only (seq gaps and
   duplicates, async operations, missed completions, viewer role, handshake
   rejection); not yet run against a real 0.4 Core.
-- End to end against a real (sandboxed) 3.1.x Core (protocol 0.2 and 0.3): sync, commands,
+- End to end against a real (sandboxed) 3.1.x Core (protocol 0.2 and 0.3), with the former Svelte frontend: sync, commands,
   rejections, rule clearing, Core restart → automatic resync, WebUI login and
   every tab rendered in headless Chromium.
-- Android: APK builds for arm64-v8a / armeabi-v7a / x86_64, lint clean.
-  **Not run on a device or emulator** (no system image installed here):
-  VpnService start/sleep/wake, TUN hand-over, socket protection under
-  lockdown mode and notifications are unverified.
-- Desktop Tauri app: compiles; not launched in this environment.
+- Kotlin: model decoding (fixture from the real library output), request
+  shapes, presentation rules, store (stale views dropped, notices), rule
+  wizard, OIDC flow — on JVM, Android host and wasm (headless Chromium).
+- Desktop app: launched against a local Core (connected, home screen
+  rendered); other screens rendered offscreen. Window packaging
+  (`packageDeb` / `packageMsi`) not tried.
+- WebUI: `msst-net-webui` against a local Core: wasm served
+  (`application/wasm`), login page rendered in headless Chromium, login /
+  view / `auth_decision` rejection checked over the API. Logged-in screens
+  were not exercised in a browser.
+- Android: APK builds (debug, without native libraries in this run).
+  **Not run on a device or emulator**: VpnService start/sleep/wake, TUN
+  hand-over, socket protection under lockdown mode and notifications are
+  unverified.

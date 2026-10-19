@@ -1,11 +1,12 @@
 [workspace]
-members = [".", "frontend/src-tauri"]
+members = ["."]
 
 [package]
 name = "msst-net-controller"
-version = "3.1.0-alpha.1"
+version = "3.1.0-alpha.2"
 edition = "2024"
 description = "MSST-Net Controller — the unprivileged GUI/CLI client."
+license = "MIT"
 
 [lib]
 name = "msst_net_controller"
@@ -22,7 +23,6 @@ required-features = ["webui"]
 
 [features]
 default = []
-tauri = ["dep:tauri"]
 webui = ["dep:axum", "dep:axum-server", "dep:rustls", "dep:rcgen", "dep:argon2", "dep:rand", "dep:ipnetwork", "dep:toml", "dep:rpassword", "dep:rust-embed", "dep:mime_guess"]
 
 [dependencies]
@@ -45,9 +45,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
 clap = { version = "4", features = ["derive", "env"] }
-
-# ── Tauri integration (optional) ─────────────────────────────────────────────
-tauri = { version = "2", optional = true }
 
 # ── WebUI backend (optional) ─────────────────────────────────────────────────
 # Same security stack as the 3.0.x WebUI (password, sessions, TLS, CIDR allowlist).
