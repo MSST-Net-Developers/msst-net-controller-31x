@@ -17,6 +17,8 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -26,6 +28,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.msst.net.resources.JetBrainsMono_Regular
 import com.msst.net.resources.Res
 import com.msst.net.resources.chillround_bold
 import com.msst.net.resources.chillround_regular
@@ -91,13 +94,21 @@ fun chillRound(): FontFamily = FontFamily(
     Font(Res.font.chillround_bold, FontWeight.Bold),
 )
 
-/** Monospace for IDs, addresses and logs. */
-val MonoFamily: FontFamily = FontFamily.Monospace
+/** Monospace for IDs, addresses and logs: JetBrains Mono (SIL OFL 1.1).
+ *  Only the regular weight is bundled.  It has no Chinese glyphs: those fall
+ *  back to the system fonts, or in the browser (no system fonts) to
+ *  ChillRound, which [MsstTheme] preloads for that purpose. */
+val MonoFamily: FontFamily
+    @Composable get() = FontFamily(Font(Res.font.JetBrainsMono_Regular, FontWeight.Normal))
 
 @Composable
 fun MsstTheme(content: @Composable () -> Unit) {
     val c = MsstColors()
     val font = chillRound()
+    // Preloaded families serve as glyph fallback where the platform has no
+    // fonts of its own (web): Chinese inside monospace text.
+    val resolver = LocalFontFamilyResolver.current
+    LaunchedEffect(font) { runCatching { resolver.preload(font) } }
     fun style(size: Int, weight: FontWeight = FontWeight.Normal, line: Int = (size * 1.5).toInt()) =
         TextStyle(fontFamily = font, fontSize = size.sp, fontWeight = weight, lineHeight = line.sp)
 
