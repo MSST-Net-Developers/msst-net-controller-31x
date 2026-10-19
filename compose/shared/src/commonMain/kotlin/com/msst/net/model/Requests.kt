@@ -101,14 +101,3 @@ fun quickDeviceRule(deviceId: String, deviceName: String, proto: String, port: I
         "protocol_ports" to listOf(obj("proto" to proto, "port" to port.toString())),
         "comment" to "访问记录操作：${if (action == "allow") "允许" else "拒绝"} $deviceName $proto/$port",
     )
-
-/** The room-mode rule: allow every current room member on all ports. */
-fun spaceAllowAllRule(): JsonObject = obj(
-    "action" to "allow",
-    "direction" to "inbound",
-    "enabled" to true,
-    "expires_at" to null,
-    "principals" to listOf(obj("kind" to "space", "id" to "*")),
-    "protocol_ports" to listOf(obj("proto" to "tcp+udp", "port" to "*")),
-    "comment" to "房间模式：放行当前房间内所有成员",
-)

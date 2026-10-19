@@ -73,7 +73,7 @@ enum class ControllerVariant { Desktop, Mobile, Web }
  */
 data class ControllerFeatures(
     /** The rule wizard and permission-group management.  Without it, rules
-     *  are only created by quick actions (access log, room mode). */
+     *  are only created from interactive authorization and the access log. */
     val manualRuleCreation: Boolean,
     /** Interactive authorization: the access-request dialog and
      *  notifications.  Without it, requests are left to another Controller

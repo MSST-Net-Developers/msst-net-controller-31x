@@ -36,7 +36,6 @@ import com.msst.net.model.Req
 import com.msst.net.model.SystemState
 import com.msst.net.model.obj
 import com.msst.net.model.quickDeviceRule
-import com.msst.net.model.spaceAllowAllRule
 import com.msst.net.platform.formatDateTime
 import com.msst.net.platform.formatTime
 import com.msst.net.platform.nowMs
@@ -91,7 +90,6 @@ fun DefenseScreen() {
     var pingBusy by remember { mutableStateOf(false) }
     var busyRules by remember { mutableStateOf(setOf<String>()) }
     var clearing by remember { mutableStateOf(false) }
-    var spaceBusy by remember { mutableStateOf(false) }
 
     // Access log: queried on demand; responses of superseded loads are dropped.
     var log by remember { mutableStateOf(listOf<AccessLogEntry>()) }
@@ -158,18 +156,7 @@ fun DefenseScreen() {
                 if (showLog) loadLog()
             }, icon = MdiIcons.History, active = showLog)
             if (!showLog) {
-                if (manual) {
-                    SecondaryButton("新建规则", { dialog = DefenseDialog.Wizard(null) }, enabled = connected, icon = MdiIcons.Plus)
-                } else {
-                    SecondaryButton(if (spaceBusy) "添加中…" else "放行房间成员", {
-                        spaceBusy = true
-                        error = null
-                        scope.launch {
-                            attempt { ctx.backend.request(Req.createAclRule(spaceAllowAllRule())) }.errorMessage?.let { error = "添加规则失败：$it" }
-                            spaceBusy = false
-                        }
-                    }, enabled = connected && !spaceBusy, icon = MdiIcons.AccountMultipleOutline)
-                }
+                if (manual) SecondaryButton("新建规则", { dialog = DefenseDialog.Wizard(null) }, enabled = connected, icon = MdiIcons.Plus)
                 SecondaryButton(
                     if (clearing) "清空中…" else "清空",
                     { dialog = DefenseDialog.ConfirmClear },
@@ -185,7 +172,7 @@ fun DefenseScreen() {
 
         error?.let { InlineError(it, Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) }
         if (!manual && !showLog) {
-            InlineNote("移动端不能手动创建规则；可通过访问记录、访问请求或「放行房间成员」添加规则。", Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+            InlineNote("移动端不能手动创建规则；可在处理访问请求或查看访问记录时添加规则。", Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
         }
 
         if (!showLog) {
