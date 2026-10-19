@@ -41,6 +41,7 @@ import com.msst.net.state.Phase
 import com.msst.net.state.attempt
 import com.msst.net.state.errorMessage
 import com.msst.net.state.normalizeNamespace
+import com.msst.net.ui.LocalCompact
 import com.msst.net.ui.LocalController
 import com.msst.net.ui.MdiIcons
 import com.msst.net.ui.components.Card
@@ -86,14 +87,23 @@ fun DnsScreen() {
     }
     LaunchedEffect(authenticated) { if (authenticated) load() }
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    val compact = LocalCompact.current
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(if (compact) 12.dp else 20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Column(Modifier.widthIn(max = 760.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(".msst.net 命名空间管理", style = MaterialTheme.typography.titleLarge, color = c.textPrimary)
+            val title = @Composable { modifier: Modifier ->
+                Column(modifier) {
+                    Text(".msst.net 命名空间管理", style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge, color = c.textPrimary)
                     Text("注册命名空间后，可在 *.<namespace>.msst.net 下添加 CNAME / TXT / SRV 记录。", style = MaterialTheme.typography.bodySmall, color = c.textMuted)
                 }
-                PrimaryButton("申请命名空间", { showRegister = true }, enabled = authenticated, icon = MdiIcons.Plus)
+            }
+            if (compact) {
+                title(Modifier.fillMaxWidth())
+                PrimaryButton("申请命名空间", { showRegister = true }, Modifier.fillMaxWidth(), enabled = authenticated, icon = MdiIcons.Plus)
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    title(Modifier.weight(1f))
+                    PrimaryButton("申请命名空间", { showRegister = true }, enabled = authenticated, icon = MdiIcons.Plus)
+                }
             }
             when {
                 !authenticated -> EmptyState("域名管理需要先完成 MSST 接入认证\n请点击首页的「接入认证」按钮完成认证")

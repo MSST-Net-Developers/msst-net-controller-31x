@@ -91,6 +91,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.msst.net.platform.PlatformServices
 import com.msst.net.state.Banner
 import com.msst.net.state.BannerKind
+import com.msst.net.ui.LocalCompact
 import com.msst.net.ui.MdiIcons
 import com.msst.net.ui.theme.MonoFamily
 import com.msst.net.ui.theme.Msst
@@ -138,7 +139,7 @@ private fun DrawScope.drawLogo() {
 @Composable
 fun Card(
     modifier: Modifier = Modifier,
-    padding: PaddingValues = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+    padding: PaddingValues? = null,
     border: Color = Msst.colors.borderLight,
     background: Color = Msst.colors.bgPrimary,
     content: @Composable ColumnScope.() -> Unit,
@@ -148,7 +149,7 @@ fun Card(
             .clip(Radius.lg)
             .background(background)
             .border(1.dp, border, Radius.lg)
-            .padding(padding),
+            .padding(padding ?: if (LocalCompact.current) PaddingValues(14.dp) else PaddingValues(horizontal = 20.dp, vertical = 16.dp)),
         verticalArrangement = Arrangement.spacedBy(8.dp),
         content = content,
     )
@@ -345,7 +346,8 @@ fun SmallIconButton(
     tint: Color = Msst.colors.textTertiary,
     size: Dp = 16.dp,
 ) {
-    IconButton(onClick, Modifier.size(32.dp), enabled = enabled) {
+    // Phones: at least 40 dp to be comfortably tappable.
+    IconButton(onClick, Modifier.size(if (LocalCompact.current) 40.dp else 32.dp), enabled = enabled) {
         MIcon(icon, size, if (enabled) tint else tint.copy(alpha = 0.4f), contentDescription)
     }
 }
@@ -563,13 +565,14 @@ fun Modal(
         onDismissRequest = { if (!busy) onDismiss() },
         properties = DialogProperties(dismissOnBackPress = !busy, dismissOnClickOutside = !busy, usePlatformDefaultWidth = false),
     ) {
+        val compact = LocalCompact.current
         Surface(
-            Modifier.padding(16.dp).widthIn(max = if (wide) 640.dp else 440.dp).fillMaxWidth(),
+            Modifier.padding(if (compact) 12.dp else 16.dp).widthIn(max = if (wide) 640.dp else 440.dp).fillMaxWidth(),
             shape = Radius.xl,
             color = Msst.colors.bgPrimary,
             shadowElevation = 12.dp,
         ) {
-            Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.padding(if (compact) 18.dp else 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (icon != null) Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { icon() }
                 if (title != null) {
                     Text(

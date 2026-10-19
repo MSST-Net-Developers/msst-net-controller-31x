@@ -46,6 +46,7 @@ import com.msst.net.state.deviceName
 import com.msst.net.state.errorMessage
 import com.msst.net.state.formatPorts
 import com.msst.net.state.formatPrincipal
+import com.msst.net.ui.LocalCompact
 import com.msst.net.ui.LocalController
 import com.msst.net.ui.MdiIcons
 import com.msst.net.ui.components.Card
@@ -129,7 +130,7 @@ fun DefenseScreen() {
 
     Column(Modifier.fillMaxSize()) {
         FlowRow(
-            Modifier.fillMaxWidth().background(Msst.colors.bgPrimary).padding(horizontal = 16.dp, vertical = 8.dp),
+            Modifier.fillMaxWidth().background(Msst.colors.bgPrimary).padding(horizontal = if (LocalCompact.current) 12.dp else 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
             itemVerticalAlignment = Alignment.CenterVertically,
@@ -194,7 +195,7 @@ fun DefenseScreen() {
                 rules.isEmpty() -> EmptyState("暂无防火墙规则（未匹配的入站访问默认拒绝）")
                 else -> LazyColumn(
                     Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
+                    contentPadding = PaddingValues(if (LocalCompact.current) 12.dp else 16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     items(rules, key = { it.id }) { rule ->
@@ -213,7 +214,7 @@ fun DefenseScreen() {
                 }
             }
         } else {
-            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(if (LocalCompact.current) 12.dp else 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 logError?.let { item { EmptyState(it, error = true) } }
                 if (log.isEmpty() && logError == null) item { EmptyState(if (logLoading) "加载中…" else "暂无访问记录") }
                 items(log, key = { it.id }) { e ->
@@ -255,30 +256,46 @@ fun DefenseScreen() {
 @Composable
 private fun RuleCard(rule: FirewallRule, busy: Boolean, onToggle: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit) {
     val c = Msst.colors
-    Card(padding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Toggle(rule.enabled, { onToggle() }, enabled = !busy)
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (rule.action == "allow") Pill("允许", c.success, c.successLight) else Pill("拒绝", c.error, c.errorLight)
-                    Text(
-                        formatPorts(rule.protocolPorts),
-                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
-                        color = if (rule.enabled) c.textPrimary else c.textMuted,
-                    )
-                }
+    val details = @Composable { modifier: Modifier ->
+        Column(modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (rule.action == "allow") Pill("允许", c.success, c.successLight) else Pill("拒绝", c.error, c.errorLight)
                 Text(
-                    formatPrincipal(rule.permissionGroup, rule.principalMnemonics),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (rule.enabled) c.textSecondary else c.textMuted,
+                    formatPorts(rule.protocolPorts),
+                    Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                    color = if (rule.enabled) c.textPrimary else c.textMuted,
                 )
-                if (rule.pendingMigration) InlineNote("含尚未解析的助记符")
-                rule.expiresAt?.let { InlineNote("有效期至 ${formatDateTime(it * 1000)}") }
-                rule.comment?.takeIf { it.isNotEmpty() }?.let { Text("备注：$it", style = MaterialTheme.typography.labelSmall, color = c.textTertiary) }
             }
-            SmallIconButton(MdiIcons.Pencil, "编辑", onEdit)
-            SmallIconButton(MdiIcons.TrashCanOutline, "删除", onDelete, enabled = !busy, tint = c.error)
+            Text(
+                formatPrincipal(rule.permissionGroup, rule.principalMnemonics),
+                style = MaterialTheme.typography.labelSmall,
+                color = if (rule.enabled) c.textSecondary else c.textMuted,
+            )
+            if (rule.pendingMigration) InlineNote("含尚未解析的助记符")
+            rule.expiresAt?.let { InlineNote("有效期至 ${formatDateTime(it * 1000)}") }
+            rule.comment?.takeIf { it.isNotEmpty() }?.let { Text("备注：$it", style = MaterialTheme.typography.labelSmall, color = c.textTertiary) }
+        }
+    }
+    Card(padding = PaddingValues(horizontal = 14.dp, vertical = 10.dp)) {
+        if (LocalCompact.current) {
+            // Phones: details get the full width; controls in a row below.
+            details(Modifier.fillMaxWidth())
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Toggle(rule.enabled, { onToggle() }, enabled = !busy)
+                Spacer(Modifier.width(8.dp))
+                Text(if (rule.enabled) "已启用" else "已停用", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = c.textMuted)
+                SmallIconButton(MdiIcons.Pencil, "编辑", onEdit)
+                SmallIconButton(MdiIcons.TrashCanOutline, "删除", onDelete, enabled = !busy, tint = c.error)
+            }
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Toggle(rule.enabled, { onToggle() }, enabled = !busy)
+                Spacer(Modifier.width(12.dp))
+                details(Modifier.weight(1f))
+                SmallIconButton(MdiIcons.Pencil, "编辑", onEdit)
+                SmallIconButton(MdiIcons.TrashCanOutline, "删除", onDelete, enabled = !busy, tint = c.error)
+            }
         }
     }
 }

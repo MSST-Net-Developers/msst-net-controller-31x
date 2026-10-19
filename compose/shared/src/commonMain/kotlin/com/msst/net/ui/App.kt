@@ -39,6 +39,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.msst.net.platform.ControllerPlatform
 import com.msst.net.platform.ControllerVariant
@@ -72,6 +73,10 @@ class ControllerContext(val platform: ControllerPlatform, val store: ControllerS
 }
 
 val LocalController = staticCompositionLocalOf<ControllerContext> { error("no ControllerContext") }
+
+/** The window is phone-sized (narrower than 600 dp): tighter spacing,
+ *  larger touch targets, stacked toolbars. */
+val LocalCompact = staticCompositionLocalOf { false }
 
 private enum class Tab(val label: String, val icon: ImageVector) {
     Home("首页", MdiIcons.HomeOutline),
@@ -128,6 +133,7 @@ private fun MainShell(onLogout: (() -> Unit)?) {
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val compact = maxWidth < 600.dp
+        CompositionLocalProvider(LocalCompact provides compact) {
         Column(Modifier.fillMaxSize()) {
             if (compact) CompactTopBar(if (tab == Tab.Home && room?.inRoom == true) "当前房间" else tab.label, onLogout)
             else TopTabs(tab, { tab = it }, onLogout)
@@ -147,9 +153,9 @@ private fun MainShell(onLogout: (() -> Unit)?) {
 
             if (compact) BottomTabs(tab) { tab = it }
         }
+        if (ctx.features.interactiveAuth) AccessRequestDialog()
+        }
     }
-
-    if (ctx.features.interactiveAuth) AccessRequestDialog()
 }
 
 @Composable
@@ -242,6 +248,15 @@ private fun RoomBanner(name: String?, roomId: String, relay: String?) {
             Text(roomId, style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFamily), color = c.primaryDark)
             CopyButton(roomId, services, "复制房间号", 13.dp)
         }
-        if (relay != null) Text("中转 $relay", style = MaterialTheme.typography.labelSmall, color = c.textSecondary)
+        if (relay != null) {
+            Text(
+                "中转 $relay",
+                Modifier.weight(1f, fill = false),
+                style = MaterialTheme.typography.labelSmall,
+                color = c.textSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }

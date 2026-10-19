@@ -54,6 +54,7 @@ import com.msst.net.state.formatBytes
 import com.msst.net.state.oneDecimal
 import com.msst.net.state.triState
 import com.msst.net.state.validHandle
+import com.msst.net.ui.LocalCompact
 import com.msst.net.ui.LocalController
 import com.msst.net.ui.MdiIcons
 import com.msst.net.ui.components.Card
@@ -84,10 +85,10 @@ import kotlinx.coroutines.launch
 fun SettingsScreen() {
     val ctx = LocalController.current
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(if (LocalCompact.current) 12.dp else 20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(if (LocalCompact.current) 12.dp else 16.dp)) {
             IdentityCard()
             ctx.platform.appExclusion?.let { AppExclusionCard(it) }
             ctx.platform.session?.let { RemoteAccessCard(it) }

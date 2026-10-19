@@ -50,6 +50,7 @@ import com.msst.net.state.deviceMnemonic
 import com.msst.net.state.errorMessage
 import com.msst.net.state.pathLabel
 import com.msst.net.state.userMnemonic
+import com.msst.net.ui.LocalCompact
 import com.msst.net.ui.LocalController
 import com.msst.net.ui.MdiIcons
 import com.msst.net.ui.components.Card
@@ -100,7 +101,10 @@ private fun RoomView(view: ControllerView) {
         } else {
             LazyColumn(
                 Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                    horizontal = if (LocalCompact.current) 12.dp else 20.dp,
+                    vertical = if (LocalCompact.current) 12.dp else 16.dp,
+                ),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(room.peers, key = { it.deviceId }) { peer ->
@@ -195,10 +199,11 @@ private fun ModePage(view: ControllerView?) {
         }
     }
 
+    val compact = LocalCompact.current
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
             Column(
-                Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp),
+                Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(if (compact) 12.dp else 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
@@ -231,11 +236,22 @@ private fun ModePage(view: ControllerView?) {
                 }
 
                 hint?.let { InlineError(it) }
+                // Phones: an in-page button instead of the floating one, which
+                // would cover the cards on small screens.
+                if (compact) {
+                    SecondaryButton(
+                        "接入认证",
+                        { requireCoordinator("auth", "查看认证状态或发起接入认证") },
+                        Modifier.widthIn(max = 420.dp).fillMaxWidth(),
+                        enabled = ready,
+                        icon = MdiIcons.AccountKeyOutline,
+                    )
+                }
                 LinkButton("项目官网 · 使用说明", { ctx.services.openUrl(WEBSITE) }, MdiIcons.BookOpenOutline, color = Msst.colors.textTertiary)
             }
             StatusBar(view, backendError)
         }
-        FloatingActionButton(
+        if (!compact) FloatingActionButton(
             onClick = { requireCoordinator("auth", "查看认证状态或发起接入认证") },
             modifier = Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = 64.dp).size(48.dp),
             containerColor = if (ready) Msst.colors.primary else Msst.colors.borderPrimary,
@@ -319,11 +335,11 @@ private fun StatusBar(view: ControllerView?, backendError: String?) {
         CoreStatus.Checking -> c.borderMedium to c.textMuted
     }
     Row(
-        Modifier.fillMaxWidth().background(c.bgPrimary).padding(start = 24.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
+        Modifier.fillMaxWidth().background(c.bgPrimary).padding(start = if (LocalCompact.current) 16.dp else 24.dp, end = 8.dp, top = 2.dp, bottom = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text("客户端核心状态：", style = MaterialTheme.typography.bodySmall, color = c.textTertiary)
+        if (!LocalCompact.current) Text("客户端核心状态：", style = MaterialTheme.typography.bodySmall, color = c.textTertiary)
         Dot(dot)
         Text(
             coreStatusLabel(view, backendError),

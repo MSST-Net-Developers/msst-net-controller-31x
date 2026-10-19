@@ -34,6 +34,7 @@ import com.msst.net.platform.formatDateTime
 import com.msst.net.platform.query
 import com.msst.net.state.attempt
 import com.msst.net.state.errorMessage
+import com.msst.net.ui.LocalCompact
 import com.msst.net.ui.LocalController
 import com.msst.net.ui.components.ConfirmDialog
 import com.msst.net.ui.components.EmptyState
@@ -78,9 +79,9 @@ fun LogDialog(onClose: () -> Unit) {
     Modal(onClose, "客户端核心日志", wide = true, actions = {
         SecondaryButton("关闭", onClose)
     }) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Select(LEVELS, level, { if (it == "all") "全部级别" else it.uppercase() }, { level = it }, Modifier.width(130.dp))
-            Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End)) {
+        val compact = LocalCompact.current
+        val buttons = @Composable { modifier: Modifier ->
+            Row(modifier, horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End)) {
                 SecondaryButton("刷新", { scope.launch { load() } }, enabled = !loading)
                 SecondaryButton("清空", { confirmClear = true })
                 PrimaryButton("导出", {
@@ -94,6 +95,19 @@ fun LogDialog(onClose: () -> Unit) {
                 }, enabled = filtered.isNotEmpty())
             }
         }
+        val levels = @Composable { modifier: Modifier ->
+            Select(LEVELS, level, { if (it == "all") "全部级别" else it.uppercase() }, { level = it }, modifier)
+        }
+        if (compact) {
+            // Phones: level selector and buttons on separate rows.
+            levels(Modifier.fillMaxWidth())
+            buttons(Modifier.fillMaxWidth())
+        } else {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                levels(Modifier.width(130.dp))
+                buttons(Modifier.weight(1f))
+            }
+        }
         error?.let { InlineError(it) }
         note?.let { InlineNote(it) }
         val c = Msst.colors
@@ -102,7 +116,7 @@ fun LogDialog(onClose: () -> Unit) {
         } else {
             SelectionContainer {
                 LazyColumn(
-                    Modifier.fillMaxWidth().height(360.dp).clip(Radius.md).background(c.bgSecondary)
+                    Modifier.fillMaxWidth().height(if (compact) 280.dp else 360.dp).clip(Radius.md).background(c.bgSecondary)
                         .border(1.dp, c.borderLight, Radius.md).padding(8.dp),
                 ) {
                     itemsIndexed(filtered) { _, e ->

@@ -39,6 +39,7 @@ import com.msst.net.platform.DeviceApp
 import com.msst.net.state.attempt
 import com.msst.net.state.errorMessage
 import com.msst.net.state.filterApps
+import com.msst.net.ui.LocalCompact
 import com.msst.net.ui.MdiIcons
 import com.msst.net.ui.components.CheckRow
 import com.msst.net.ui.components.EmptyState
@@ -100,7 +101,7 @@ fun AppExclusionDialog(exclusion: AppExclusion, onClose: () -> Unit) {
             apps == null -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { Spinner(24.dp) }
             shown.isEmpty() -> EmptyState(if (query.isBlank()) "没有可选择的应用" else "没有匹配的应用")
             else -> LazyColumn(
-                Modifier.fillMaxWidth().height(360.dp).clip(Radius.md).border(1.dp, Msst.colors.borderLight, Radius.md),
+                Modifier.fillMaxWidth().height(if (LocalCompact.current) 280.dp else 360.dp).clip(Radius.md).border(1.dp, Msst.colors.borderLight, Radius.md),
             ) {
                 items(shown, key = { it.packageName }) { app ->
                     val checked = app.packageName in selected
