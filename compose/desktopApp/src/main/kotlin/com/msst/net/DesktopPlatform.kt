@@ -2,6 +2,7 @@ package com.msst.net
 
 import androidx.compose.ui.window.Notification
 import androidx.compose.ui.window.TrayState
+import com.msst.net.jni.DesktopNotifications
 import com.msst.net.jni.JniBackend
 import com.msst.net.model.UiNotice
 import com.msst.net.platform.AccessRequestNotifier
@@ -9,7 +10,10 @@ import com.msst.net.platform.ControllerBackend
 import com.msst.net.platform.ControllerPlatform
 import com.msst.net.platform.ControllerVariant
 import com.msst.net.platform.PlatformServices
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.awt.Desktop
 import java.awt.Toolkit
@@ -47,11 +51,25 @@ class DesktopPlatform(private val tray: TrayState) : ControllerPlatform {
         }
     }
 
+    /** Brings the main window to the front; set by the window. */
+    @Volatile var activateWindow: () -> Unit = {}
+
+    private val notifyScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    /** Linux: the desktop's own notification service (the JVM tray draws
+     *  its own balloon there).  Windows and macOS: the tray notification,
+     *  which those systems already show natively. */
+    private val nativeNotifications = System.getProperty("os.name").orEmpty().startsWith("Linux")
+
     /** A system notification per new access request (as in 3.0.x); the
      *  decision is made in the app's dialog. */
     override val notifier = AccessRequestNotifier { req: UiNotice.AccessRequest ->
         val who = req.srcDeviceDisplayName ?: req.srcDeviceId
         val what = req.serviceName?.let { "$it（${req.proto}:${req.dstPort}）" } ?: "${req.proto}:${req.dstPort}"
-        tray.sendNotification(Notification("访问请求", "$who 想访问您的 $what 服务，请在应用中处理", Notification.Type.Info))
+        val title = "访问请求"
+        val body = "$who 想访问您的 $what 服务，请在应用中处理"
+        notifyScope.launch {
+            val shown = nativeNotifications && DesktopNotifications.show(title, body) { activateWindow() }
+            if (!shown) tray.sendNotification(Notification(title, body, Notification.Type.Info))
+        }
     }
 }

@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
@@ -18,6 +19,7 @@ import com.msst.net.state.ControllerStore
 import com.msst.net.ui.ControllerApp
 import com.msst.net.ui.components.LogoPainter
 import com.msst.net.ui.theme.MsstTheme
+import javax.swing.SwingUtilities
 
 fun main() = application {
     val trayState = rememberTrayState()
@@ -35,6 +37,19 @@ fun main() = application {
         icon = LogoPainter,
         state = rememberWindowState(width = 900.dp, height = 640.dp),
     ) {
+        // Clicking an access-request notification shows this window.
+        DisposableEffect(window) {
+            val p = platform.getOrNull()
+            p?.activateWindow = {
+                SwingUtilities.invokeLater {
+                    window.isMinimized = false
+                    window.isVisible = true
+                    window.toFront()
+                    window.requestFocus()
+                }
+            }
+            onDispose { p?.activateWindow = {} }
+        }
         platform.fold(
             onSuccess = { p ->
                 val store = remember { ControllerStore(p.backend, scope, p.notifier) }

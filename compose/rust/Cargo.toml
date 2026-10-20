@@ -37,6 +37,11 @@ tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "net", "
 serde_json = "1"
 tracing = "0.1"
 
+# Native desktop notifications (freedesktop D-Bus, pure Rust).  Windows
+# and macOS keep the JVM's tray notifications, which are already native.
+[target.'cfg(target_os = "linux")'.dependencies]
+notify-rust = "4"
+
 [profile.release]
 # unwind (not abort) so JNI entry points can report panics as errors
 panic = "unwind"

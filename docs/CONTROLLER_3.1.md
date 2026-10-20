@@ -13,7 +13,7 @@ src/                 Controller library (IPC client, state sync, notices) — us
 compose/             Kotlin Multiplatform / Compose Multiplatform Controller (one UI for all variants)
   shared/            common UI, presentation state, model; `jniMain` = JNI backend (Android + desktop)
   androidApp/        Android: Activity, VpnService (embedded Core), notifications
-  desktopApp/        desktop (JVM): window, tray notifications
+  desktopApp/        desktop (JVM): window, tray, notifications (Linux: freedesktop D-Bus via msst_jni)
   webApp/            WebUI frontend (wasm), talks to msst-net-webui over HTTPS
   rust/              JNI crate `msst_jni`: this library (+ EmbeddedCore with `--features embedded-core`)
 docs/PROTOCOL_PROPOSALS_3.1.md   issues found in Core / protocol (not changed here)
@@ -28,7 +28,7 @@ The shared UI talks to a `ControllerPlatform` (`compose/shared/.../platform/Plat
 | Reaches the library | JNI, Core's system IPC endpoint | JNI, `filesDir/ipc.sock` of the embedded Core | HTTPS API of `msst-net-webui` (which holds the IPC client) |
 | Rule wizard / permission groups | yes | **no** (rules only from interactive authorization, access-log actions and room members) | yes |
 | Rule for a room member (right click / long press → 添加防火墙规则; source fixed to its device ID) | yes | yes | yes |
-| Interactive authorization | dialog + tray notification | dialog + notification with actions | **no** (server also rejects `auth_decision`) |
+| Interactive authorization | dialog + system notification (Linux: native D-Bus; Windows/macOS: tray) | dialog + notification with actions | **no** (server also rejects `auth_decision`) |
 | Access password / IP allowlist | — | — | **required** (`WebSession`) |
 | VPN service control | — | `VpnControl` | — |
 | Per-app exclusion | — | `AppExclusion` (`addDisallowedApplication`; list in app preferences, not Core) | — |

@@ -266,6 +266,63 @@ pub extern "system" fn Java_com_msst_net_jni_MsstNative_nativeSetListener(
     })
 }
 
+// ── Desktop notifications ────────────────────────────────────────────────────
+
+#[cfg(target_os = "linux")]
+mod notify_linux;
+
+/// Show a native desktop notification; `on_activate` (a `Runnable`, may be
+/// null) runs when the user clicks it.  `{"ok":true}`, or an error with
+/// code `unsupported` where this library has no native notifications (the
+/// caller then uses its own fallback).
+#[cfg(not(target_os = "android"))]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_msst_net_jni_DesktopNotifications_nativeShow(
+    mut env: JNIEnv,
+    _class: JClass,
+    title: JString,
+    body: JString,
+    on_activate: JObject,
+) -> jstring {
+    remember_vm(&env);
+    guarded(&mut env, |env| {
+        let (title, body) = match (string_arg(env, &title), string_arg(env, &body)) {
+            (Ok(t), Ok(b)) => (t, b),
+            (Err(e), _) | (_, Err(e)) => return err_msg("request", "invalid_request", e),
+        };
+        #[cfg(target_os = "linux")]
+        {
+            let callback = if on_activate.is_null() {
+                None
+            } else {
+                match env.new_global_ref(on_activate) {
+                    Ok(g) => Some(g),
+                    Err(e) => return err_msg("internal", "jni", e.to_string()),
+                }
+            };
+            let activate = callback.map(|runnable| -> Box<dyn FnOnce() + Send> {
+                Box::new(move || {
+                    let Some(vm) = JVM.get() else { return };
+                    let Ok(mut env) = vm.attach_current_thread_as_daemon() else { return };
+                    let _ = env.call_method(runnable.as_obj(), "run", "()V", &[]);
+                    if env.exception_check().unwrap_or(false) {
+                        let _ = env.exception_clear();
+                    }
+                })
+            });
+            match notify_linux::show(&title, &body, activate) {
+                Ok(()) => ok(json!({})),
+                Err(e) => err_msg("platform", "notification_failed", e),
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = (title, body, on_activate);
+            err_msg("platform", "unsupported", "no native notifications on this platform")
+        }
+    })
+}
+
 // ── Core lifecycle (Android VpnService) ──────────────────────────────────────
 
 #[cfg(feature = "embedded-core")]
