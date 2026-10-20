@@ -494,12 +494,19 @@ fn apply_event_to(st: &mut SystemState, event: &IpcEvent, full_events: bool) -> 
                 _ => (vec![], vec![Nodes]),
             }
         }
-        IpcEvent::PathChanged { device_id, new_mode, .. } => {
+        IpcEvent::PathChanged { device_id, new_mode, endpoint, .. } => {
             if let Some(node) = st.nodes.get_mut(device_id) {
-                node.path_mode = Some(new_mode.clone());
+                // Same form as `GetPathView`'s `chosen` ("direct:ip:port").
+                node.path_mode = Some(match endpoint {
+                    Some(ep) if new_mode == "direct" => format!("direct:{ep}"),
+                    _ => new_mode.clone(),
+                });
             }
             (vec![Nodes], vec![])
         }
+        // Encryption is not kept in the view; the path view (diagnostics)
+        // queries it.
+        IpcEvent::EncryptionChanged { .. } => (vec![], vec![]),
         IpcEvent::AclChanged { rule_id, action } => {
             if action == "deleted" {
                 st.acl_rules.retain(|r| r.id != *rule_id);
@@ -599,8 +606,7 @@ mod tests {
             "device_hostname": "pc.alice.ezplay.msst.net",
             "is_authenticated": true, "auth_expires_at": 1_900_000_000i64,
             "ws_connected": true, "coordinator_state": "Connected", "tun_ready": true,
-            "relay": "1.2.3.4:3478", "peer_count": 1, "rule_count": 1, "ping_enabled": false,
-            "local_device_id": "device-aabbccdd", "local_user_id": "usr-11223344"
+            "relay": "1.2.3.4:3478", "peer_count": 1, "rule_count": 1, "ping_enabled": false
         })
     }
 
@@ -723,8 +729,18 @@ mod tests {
                 display_name: Some("D1".into()),
             })
             .await;
-        store.apply_event(&IpcEvent::PathChanged { device_id: "d1".into(), old_mode: "relay".into(), new_mode: "direct".into() }).await;
-        assert_eq!(store.snapshot().await.nodes["d1"].path_mode.as_deref(), Some("direct"));
+        let path = |old: &str, new: &str, ep: Option<&str>| IpcEvent::PathChanged {
+            device_id: "d1".into(),
+            old_mode: old.into(),
+            new_mode: new.into(),
+            endpoint: ep.map(Into::into),
+        };
+        store.apply_event(&path("relay", "probing", None)).await;
+        assert_eq!(store.snapshot().await.nodes["d1"].path_mode.as_deref(), Some("probing"));
+        store.apply_event(&path("probing", "direct", Some("203.0.113.7:21031"))).await;
+        assert_eq!(store.snapshot().await.nodes["d1"].path_mode.as_deref(), Some("direct:203.0.113.7:21031"));
+        let ev = IpcEvent::EncryptionChanged { device_id: "d1".into(), old_state: "handshaking".into(), new_state: "encrypted".into() };
+        assert!(store.apply_event(&ev).await.is_empty());
         store.apply_event(&IpcEvent::NodeRemoved { device_id: "d1".into() }).await;
         assert!(store.snapshot().await.nodes.is_empty());
     }

@@ -195,6 +195,32 @@ fun coversAllPorts(expr: String): Boolean = expr.trim().let { it == "*" || it ==
 /** Mnemonic handle rule (Core `validate_handle`: lowercase letters, digits, hyphens). */
 fun validHandle(s: String): Boolean = Regex("^[a-z0-9-]+$").matches(s)
 
+/** Core's display-name limit (`normalize_display_name`), in characters. */
+const val MAX_DISPLAY_NAME_CHARS = 64
+
+/** Why Core would reject [name] as a display name (trimmed: at most 64
+ *  characters, no control characters), or null if it is acceptable.  An
+ *  empty name is acceptable: it clears the name. */
+fun displayNameProblem(name: String): String? {
+    val n = name.trim()
+    return when {
+        n.count { !it.isLowSurrogate() } > MAX_DISPLAY_NAME_CHARS -> "名称最多 $MAX_DISPLAY_NAME_CHARS 个字符"
+        n.any { it.isISOControl() } -> "名称不能包含控制字符"
+        else -> null
+    }
+}
+
+/** A WireGuard session state from `GetPathView` / `EncryptionChanged`. */
+fun encryptionLabel(state: String?): String? = when (state) {
+    null -> null
+    "no_key" -> "无公钥（无法通信）"
+    "unknown" -> "未建立"
+    "handshaking" -> "握手中"
+    "encrypted" -> "已加密"
+    "failed" -> "握手失败"
+    else -> state
+}
+
 /** A `.msst.net` namespace label (3.0.x rule). */
 fun normalizeNamespace(input: String): String? {
     val ns = input.trim().lowercase().removeSuffix(".msst.net")

@@ -36,8 +36,17 @@ data class PathCandidate(
 data class PathViewEntry(
     @SerialName("device_id") val deviceId: String,
     @SerialName("display_name") val displayName: String? = null,
+    /** `relay`, `probing` or `direct:<ip:port>`. */
     val chosen: String = "",
     val candidates: List<PathCandidate> = emptyList(),
+    /** WireGuard session (0.4): `no_key`, `unknown`, `handshaking`,
+     *  `encrypted` or `failed`; null from older Cores. */
+    val encryption: String? = null,
+    /** Unix seconds, while a session exists. */
+    @SerialName("last_handshake_at") val lastHandshakeAt: Long? = null,
+    /** Failed probe rounds; no probing before [nextProbeAt] (Unix seconds). */
+    @SerialName("probe_failures") val probeFailures: Int = 0,
+    @SerialName("next_probe_at") val nextProbeAt: Long? = null,
 )
 
 @Serializable
@@ -69,6 +78,17 @@ data class RelayList(
     val relays: List<Relay> = emptyList(),
     val current: String? = null,
     @SerialName("rtt_ms") val rttMs: Map<String, Double> = emptyMap(),
+    @SerialName("secure_discovery") val secureDiscovery: SecureDiscovery? = null,
+)
+
+/** Game discovery through the current relay (`GetRelays`).  Inactive when
+ *  the relay has no public key. */
+@Serializable
+data class SecureDiscovery(
+    val active: Boolean = false,
+    @SerialName("rx_accepted") val rxAccepted: Long = 0,
+    /** Dropped packets by reason (`unverified_sender`, `replay`, …). */
+    val drop: Map<String, Long> = emptyMap(),
 )
 
 @Serializable

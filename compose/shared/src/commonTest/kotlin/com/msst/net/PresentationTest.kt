@@ -20,6 +20,8 @@ import com.msst.net.state.coreReady
 import com.msst.net.state.coversAllPorts
 import com.msst.net.state.coreStatus
 import com.msst.net.state.coreStatusLabel
+import com.msst.net.state.displayNameProblem
+import com.msst.net.state.encryptionLabel
 import com.msst.net.state.coordinatorActionsAvailable
 import com.msst.net.state.coordinatorUnreachable
 import com.msst.net.state.formatPorts
@@ -34,6 +36,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -140,6 +143,27 @@ class PresentationTest {
         assertFalse(validHandle("Alice"))
         assertEquals("abjust", normalizeNamespace(" ABjust.msst.net "))
         assertNull(normalizeNamespace("-bad"))
+    }
+
+    @Test
+    fun displayNamesFollowCoreLimits() {
+        assertNull(displayNameProblem(""), "empty clears the name")
+        assertNull(displayNameProblem("  Alice 的电脑  "))
+        assertNull(displayNameProblem("名".repeat(64)))
+        assertNotNull(displayNameProblem("名".repeat(65)))
+        // Counted in characters, not UTF-16 units.
+        assertNull(displayNameProblem("😀".repeat(64)))
+        assertNotNull(displayNameProblem("a\tb"))
+    }
+
+    @Test
+    fun pathLabelsUseProtocolModes() {
+        assertEquals("中转", pathLabel("relay"))
+        assertEquals("探测直连中", pathLabel("probing"))
+        assertEquals("直连", pathLabel("direct:203.0.113.7:21031"))
+        assertEquals("已加密", encryptionLabel("encrypted"))
+        assertEquals("无公钥（无法通信）", encryptionLabel("no_key"))
+        assertNull(encryptionLabel(null))
     }
 
     @Test

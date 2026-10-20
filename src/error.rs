@@ -186,6 +186,7 @@ fn core_error_message(code: &str, raw: &str) -> String {
         INVALID_PATCH | INVALID_GROUP => with_reason("内容无效"),
         INVALID_SETTINGS => with_reason("设置无效"),
         INVALID_HANDLE => "助记符只能包含小写字母、数字和横杠。".into(),
+        INVALID_DISPLAY_NAME => "名称最多 64 个字符，且不能包含控制字符。".into(),
         NOT_FOUND => "找不到对应的对象，它可能已被删除或已处理。".into(),
         MNEMONIC_NOT_FOUND => with_reason("找不到该助记符对应的设备或用户"),
         NOT_INITIALIZED => "客户端核心尚未完成初始化，请稍后重试。".into(),

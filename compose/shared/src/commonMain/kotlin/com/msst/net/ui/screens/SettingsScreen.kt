@@ -49,6 +49,8 @@ import com.msst.net.state.Phase
 import com.msst.net.state.attempt
 import com.msst.net.state.connectionLabel
 import com.msst.net.state.coreReady
+import com.msst.net.state.displayNameProblem
+import com.msst.net.state.encryptionLabel
 import com.msst.net.state.errorMessage
 import com.msst.net.state.formatBytes
 import com.msst.net.state.oneDecimal
@@ -78,6 +80,9 @@ import com.msst.net.ui.dialogs.AppExclusionDialog
 import com.msst.net.ui.dialogs.LogDialog
 import com.msst.net.ui.theme.Msst
 import kotlinx.coroutines.delay
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -110,6 +115,7 @@ private fun IdentityCard() {
     var loadedFor by remember { mutableStateOf<String?>(null) }
     var phase by remember { mutableStateOf(Phase.Idle) }
     var error by remember { mutableStateOf<String?>(null) }
+    var unsynced by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     // Fill the form from Core once per identity (don't overwrite edits).
@@ -128,22 +134,30 @@ private fun IdentityCard() {
         }
     }
 
+    /** An empty field clears the value: Core then registers its default
+     *  (device name `用户<user_id>的设备`, handle = device ID). */
     fun save(h: Health?) {
         val n = name.trim()
         val hd = handle.trim()
         error = when {
-            n.isEmpty() -> "设备名不能为空"
+            displayNameProblem(n) != null -> "设备名${displayNameProblem(n)}"
             hd.isNotEmpty() && !validHandle(hd) -> "助记符只能包含小写字母、数字和横杠"
             else -> null
         }
         if (error != null) return run { phase = Phase.Error }
         phase = Phase.Submitting
+        unsynced = false
         scope.launch {
             val r = attempt {
-                if (n != (h?.deviceDisplayName ?: "")) ctx.backend.request(Req.updateDisplayName(null, n))
-                if (hd.isNotEmpty() && hd != (h?.deviceHandle ?: "")) ctx.backend.request(Req.updateHandle(null, hd))
+                val replies = buildList {
+                    if (n != (h?.deviceDisplayName ?: "")) add(ctx.backend.request(Req.updateDisplayName(null, n)))
+                    if (hd != (h?.deviceHandle ?: "")) add(ctx.backend.request(Req.updateHandle(null, hd)))
+                }
+                // `synced: false`: saved in Core, not yet at the coordinator.
+                replies.any { (it as? JsonObject)?.get("synced")?.jsonPrimitive?.booleanOrNull == false }
             }
             error = r.errorMessage
+            unsynced = r.getOrNull() == true
             phase = if (r.isSuccess) Phase.Success else Phase.Error
         }
     }
@@ -152,10 +166,11 @@ private fun IdentityCard() {
         SectionHeader("设备标识符", "显示名将展示给房间内的其他成员；助记符只能包含小写字母、数字和横杠，用于在规则中引用")
         Divider()
         if (!ready) Notice("客户端核心未就绪，暂不可编辑", MdiIcons.AlertOutline)
-        TextInput(name, { name = it }, Modifier.fillMaxWidth(), label = "设备名", placeholder = "请输入设备名", enabled = ready)
-        TextInput(handle, { handle = it }, Modifier.fillMaxWidth(), label = "设备助记符", placeholder = "如：alice-laptop", enabled = ready, mono = true)
+        TextInput(name, { name = it }, Modifier.fillMaxWidth(), label = "设备名", placeholder = "留空则使用默认名称", enabled = ready)
+        TextInput(handle, { handle = it }, Modifier.fillMaxWidth(), label = "设备助记符", placeholder = "如：alice-laptop（留空则使用设备 ID）", enabled = ready, mono = true)
         if (health != null) InlineNote("设备 ID：${health.deviceId ?: "—"}　用户 ID：${health.userId ?: "—"}", selectable = true)
         error?.let { InlineError(it) }
+        if (unsynced && error == null) Notice("已保存到客户端核心，但暂未同步到协调服务器，将在下次连接协调服务器时同步", MdiIcons.AlertOutline)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             PrimaryButton(
                 when (phase) {
@@ -425,6 +440,11 @@ private fun AdvancedSections(ready: Boolean) {
                             val extra = (if (rl.current == r.addr) "（当前）" else "") + (rl.rttMs[r.addr]?.let { " ${oneDecimal(it)} ms" } ?: "")
                             RadioRow(r.addr + extra, s.preferredRelay == r.addr, { patch("preferred_relay" to r.addr) }, !busy, mono = true)
                         }
+                        rl.secureDiscovery?.let { sd ->
+                            FieldLabel("游戏发现（当前中转）")
+                            if (!sd.active) InlineNote("不可用：当前中转服务器未提供公钥，无法进行安全的游戏发现")
+                            else InfoLine("已接收 ${sd.rxAccepted}" + sd.drop.filterValues { it > 0 }.entries.joinToString("") { "  丢弃 ${it.key} ${it.value}" }, mono = true)
+                        }
                     }
                 }
             }
@@ -435,6 +455,12 @@ private fun AdvancedSections(ready: Boolean) {
                 InfoBlock {
                     InfoLine(e.displayName?.let { "$it (${e.deviceId})" } ?: e.deviceId, mono = true)
                     InfoLine("选中: ${e.chosen}", c.textPrimary)
+                    encryptionLabel(e.encryption)?.let { enc ->
+                        InfoLine("加密: $enc" + (e.lastHandshakeAt?.let { "（握手于 ${formatTime(it * 1000)}）" } ?: ""), if (e.encryption == "no_key" || e.encryption == "failed") c.warning else c.textSecondary)
+                    }
+                    if (e.probeFailures > 0) {
+                        InfoLine("直连探测已连续失败 ${e.probeFailures} 轮" + (e.nextProbeAt?.let { "，${formatTime(it * 1000)} 前不再探测" } ?: ""), c.warning)
+                    }
                     e.candidates.forEach { cand ->
                         InfoLine(
                             "${cand.addr}  ${cand.rttMs?.let { "${oneDecimal(it)} ms" } ?: "-"}  " +
