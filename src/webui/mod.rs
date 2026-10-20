@@ -34,6 +34,7 @@ use std::sync::{Arc, RwLock};
 use axum::body::Body;
 use axum::extract::ws::{Message as WsMsg, WebSocket, WebSocketUpgrade};
 use axum::extract::{ConnectInfo, Request, State};
+use axum::handler::Handler;
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -42,6 +43,7 @@ use axum::{Json, Router};
 use msst_ipc_protocol::IpcRequest;
 use serde::Deserialize;
 use serde_json::json;
+use tower_http::compression::CompressionLayer;
 
 use crate::error::{ControllerError, UiError};
 use crate::ipc::client::IpcClient;
@@ -76,7 +78,10 @@ pub fn build_router(state: WebState) -> Router {
         .route("/ws/events", get(ws_events))
         .layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
 
-    let public = Router::new().route("/api/login", post(login)).fallback(static_handler);
+    // The frontend is ~13 MB of wasm; gzip brings a first load to ~5 MB.
+    let public = Router::new()
+        .route("/api/login", post(login))
+        .fallback(static_handler.layer(CompressionLayer::new()));
 
     Router::new()
         .merge(protected)
@@ -295,6 +300,7 @@ async fn forward_notices(mut socket: WebSocket, client: IpcClient) {
 
 #[derive(rust_embed::RustEmbed)]
 #[folder = "compose/webApp/build/dist/wasmJs/productionExecutable"]
+#[exclude = "*.map"] // source maps: debugging only
 struct Frontend;
 
 async fn static_handler(req: Request) -> Response {

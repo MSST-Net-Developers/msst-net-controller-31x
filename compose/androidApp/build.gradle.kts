@@ -36,10 +36,16 @@ android {
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = providers.gradleProperty("msstVersionCode").get().toInt()
         versionName = providers.gradleProperty("msstVersionName").get()
+    }
 
-        ndk {
-            // Must match the ABIs built by rust/build-android.sh.
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+    // One APK per ABI (each carries only its own libmsst_jni.so, which holds
+    // the embedded Core).  The list must match rust/build-android.sh.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86_64")
+            isUniversalApk = false
         }
     }
 

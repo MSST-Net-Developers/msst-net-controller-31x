@@ -31,6 +31,14 @@ compose.desktop {
             description = "MSST-Net Controller"
             vendor = "MSST-Net 开发组"
             appResourcesRootDir.set(layout.projectDirectory.dir("appResources"))
+            // Beyond what jlink derives: sun.misc.Unsafe (jdk.unsupported) and
+            // java.lang.instrument, as `suggestRuntimeModules` reports.
+            modules("java.instrument", "jdk.unsupported")
+        }
+
+        // createReleaseDistributable / packageRelease*: shrunk by ProGuard.
+        buildTypes.release.proguard {
+            configurationFiles.from(project.file("proguard-rules.pro"))
         }
     }
 }

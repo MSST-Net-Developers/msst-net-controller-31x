@@ -57,9 +57,9 @@ state.
 | Library + tests | `cargo test --features webui` |
 | JNI crate tests | `cd compose/rust && cargo test` |
 | Kotlin tests | `cd compose && ./gradlew :shared:jvmTest :shared:testAndroidHostTest` (wasm: `CHROME_BIN=… ./gradlew :shared:wasmJsTest`) |
-| Desktop app | `compose/rust/build-desktop.sh`, then `cd compose && ./gradlew :desktopApp:run` (or `packageDeb` / `packageMsi`) |
+| Desktop app | `compose/rust/build-desktop.sh`, then `cd compose && ./gradlew :desktopApp:run`; to ship, `createReleaseDistributable` / `packageReleaseDeb` / `packageReleaseMsi` (ProGuard, rules in `desktopApp/proguard-rules.pro`) |
 | WebUI | `cd compose && ./gradlew :webApp:wasmJsBrowserDistribution`, then `cargo build --release --features webui --bin msst-net-webui` (the web build is embedded) |
-| Android | `compose/rust/build-android.sh` (needs cargo-ndk + NDK), then `cd compose && ./gradlew :androidApp:assembleRelease` |
+| Android | `compose/rust/build-android.sh` (needs cargo-ndk + NDK), then `cd compose && ./gradlew :androidApp:assembleRelease` (one APK per ABI; `bundleRelease` for an AAB) |
 
 The JNI crate depends on the Core repo by path (`../msst-net-core-31x`), as
 before.  UI font: 寒蝉全圆体 (ChillRound, SIL OFL 1.1), bundled as Compose
