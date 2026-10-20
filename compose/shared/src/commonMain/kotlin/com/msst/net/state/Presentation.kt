@@ -214,7 +214,9 @@ fun displayNameProblem(name: String): String? {
 fun encryptionLabel(state: String?): String? = when (state) {
     null -> null
     "no_key" -> "无公钥（无法通信）"
-    "unknown" -> "未建立"
+    // No session yet, or an idle one whose keys were erased: Core starts
+    // the handshake with the next packet in either direction.
+    "unknown" -> "空闲（有通信时自动建立）"
     "handshaking" -> "握手中"
     "encrypted" -> "已加密"
     "failed" -> "握手失败"

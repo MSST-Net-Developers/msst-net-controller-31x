@@ -162,6 +162,7 @@ class PresentationTest {
         assertEquals("探测直连中", pathLabel("probing"))
         assertEquals("直连", pathLabel("direct:203.0.113.7:21031"))
         assertEquals("已加密", encryptionLabel("encrypted"))
+        assertEquals("空闲（有通信时自动建立）", encryptionLabel("unknown"))
         assertEquals("无公钥（无法通信）", encryptionLabel("no_key"))
         assertNull(encryptionLabel(null))
     }
