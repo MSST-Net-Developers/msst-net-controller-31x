@@ -138,7 +138,7 @@ private fun IdentityCard() {
     }
 
     /** An empty field clears the value: Core then registers its default
-     *  (device name `用户<user_id>的设备`, handle = device ID). */
+     *  (device name `用户<short user ID>的设备`, handle = device ID). */
     fun save(h: Health?) {
         val n = name.trim()
         val hd = handle.trim()
