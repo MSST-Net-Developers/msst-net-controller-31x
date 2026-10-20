@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import com.msst.net.model.ControllerView
 import com.msst.net.model.Req
 import com.msst.net.model.RoomPeer
+import com.msst.net.model.RoomRelay
 import com.msst.net.platform.VpnControl
 import com.msst.net.state.CoreStatus
 import com.msst.net.state.attempt
@@ -49,6 +50,7 @@ import com.msst.net.state.coordinatorUnreachable
 import com.msst.net.state.deviceMnemonic
 import com.msst.net.state.errorMessage
 import com.msst.net.state.pathLabel
+import com.msst.net.state.roomRelayLabel
 import com.msst.net.state.userMnemonic
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -110,6 +112,7 @@ private fun RoomView(view: ControllerView) {
     val scope = rememberCoroutineScope()
 
     Column(Modifier.fillMaxSize()) {
+        room.roomRelay?.let { RoomRelayBar(it) }
         if (room.peers.isEmpty()) {
             EmptyState("暂无成员信息", Modifier.weight(1f))
         } else {
@@ -149,6 +152,29 @@ private fun RoomView(view: ControllerView) {
                 danger = true,
             )
         }
+    }
+}
+
+/** The room's own relay and its state (Core's `room_relay`). */
+@Composable
+private fun RoomRelayBar(relay: RoomRelay) {
+    val c = Msst.colors
+    val (dot, bg) = when (relay.state) {
+        "ok" -> c.successDot to c.bgPrimary
+        "down" -> c.warningDot to c.warningLight
+        else -> c.borderMedium to c.bgPrimary
+    }
+    Row(
+        Modifier.fillMaxWidth().background(bg).padding(horizontal = if (LocalCompact.current) 16.dp else 24.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Dot(dot)
+        Text(
+            roomRelayLabel(relay).orEmpty(),
+            style = MaterialTheme.typography.bodySmall,
+            color = if (relay.state == "down") c.warning else c.textSecondary,
+        )
     }
 }
 

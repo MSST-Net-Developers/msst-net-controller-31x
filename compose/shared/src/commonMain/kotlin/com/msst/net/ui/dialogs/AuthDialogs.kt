@@ -40,6 +40,7 @@ import com.msst.net.state.OidcFlow.Status
 import com.msst.net.state.attempt
 import com.msst.net.state.coordinatorActionsAvailable
 import com.msst.net.state.coordinatorUnreachable
+import com.msst.net.state.errorCode
 import com.msst.net.state.errorMessage
 import com.msst.net.ui.LocalController
 import com.msst.net.ui.MdiIcons
@@ -253,7 +254,11 @@ fun AccessRequestDialog() {
         val id = req.requestId
         scope.launch {
             // The request leaves the queue when Core's pending list no longer has it.
-            attempt { ctx.backend.request(Req.authDecision(id, d)) }.errorMessage?.let { error = id to it }
+            val r = attempt { ctx.backend.request(Req.authDecision(id, d)) }
+            // not_found: the request expired or was already answered; Core
+            // removes it from the pending list shortly.
+            val message = if (r.errorCode == "not_found") "该请求已超时或已被处理。" else r.errorMessage
+            message?.let { error = id to it }
             busy = false
         }
     }

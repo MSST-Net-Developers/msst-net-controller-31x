@@ -37,6 +37,7 @@ import com.msst.net.model.PathView
 import com.msst.net.model.PathViewEntry
 import com.msst.net.model.RelayList
 import com.msst.net.model.Req
+import com.msst.net.model.RoomRelay
 import com.msst.net.model.TrafficEntry
 import com.msst.net.model.TrafficStats
 import com.msst.net.model.UiNotice
@@ -54,6 +55,7 @@ import com.msst.net.state.encryptionLabel
 import com.msst.net.state.errorMessage
 import com.msst.net.state.formatBytes
 import com.msst.net.state.oneDecimal
+import com.msst.net.state.roomRelayLabel
 import com.msst.net.state.triState
 import com.msst.net.state.validHandle
 import com.msst.net.ui.LocalCompact
@@ -62,6 +64,7 @@ import com.msst.net.ui.MdiIcons
 import com.msst.net.ui.components.Card
 import com.msst.net.ui.components.Collapsible
 import com.msst.net.ui.components.Divider
+import com.msst.net.ui.components.FieldLabel
 import com.msst.net.ui.components.InfoBlock
 import com.msst.net.ui.components.InfoLine
 import com.msst.net.ui.components.InlineError
@@ -440,10 +443,24 @@ private fun AdvancedSections(ready: Boolean) {
                             val extra = (if (rl.current == r.addr) "（当前）" else "") + (rl.rttMs[r.addr]?.let { " ${oneDecimal(it)} ms" } ?: "")
                             RadioRow(r.addr + extra, s.preferredRelay == r.addr, { patch("preferred_relay" to r.addr) }, !busy, mono = true)
                         }
+                        rl.registration?.let { reg ->
+                            FieldLabel("中转登记（当前中转）")
+                            InfoLine(
+                                (if (reg.mode == "sreg1") "已认证登记（sreg1）" else "旧式登记（未认证）") + "  已发送 ${reg.txSreg}",
+                                if (reg.mode == "sreg1") c.textSecondary else c.warning,
+                            )
+                            InfoLine(reg.lastRelayPathOkAt?.let { "中转路径最近一次验证通过：${formatTime(it * 1000)}" } ?: "中转路径尚未验证通过")
+                        }
+                        rl.roomRelay?.let { r ->
+                            FieldLabel("房间中转服务器")
+                            InfoLine(roomRelayLabel(RoomRelay(r.address, r.selfHosted, r.state)).orEmpty(), if (r.state == "down") c.warning else c.textSecondary)
+                            InfoLine("解析地址 ${r.addr ?: "-"}  已发送登记 ${r.txSreg}", mono = true)
+                        }
                         rl.secureDiscovery?.let { sd ->
-                            FieldLabel("游戏发现（当前中转）")
-                            if (!sd.active) InlineNote("不可用：当前中转服务器未提供公钥，无法进行安全的游戏发现")
-                            else InfoLine("已接收 ${sd.rxAccepted}" + sd.drop.filterValues { it > 0 }.entries.joinToString("") { "  丢弃 ${it.key} ${it.value}" }, mono = true)
+                            FieldLabel("游戏发现")
+                            if (!sd.active) InlineNote("当前中转服务器未提供公钥，无法通过它进行安全的游戏发现")
+                            InfoLine("已接收 ${sd.rxAccepted}" + sd.drop.filterValues { it > 0 }.entries.joinToString("") { "  丢弃（${dropReasonLabel(it.key)}）${it.value}" }, mono = true)
+                            if (sd.relays.isNotEmpty()) InfoLine("发往：${sd.relays.joinToString("、")}", mono = true)
                         }
                     }
                 }
@@ -533,9 +550,13 @@ private fun AdvancedSections(ready: Boolean) {
     }
 }
 
-@Composable
-private fun FieldLabel(text: String, modifier: Modifier = Modifier) =
-    Text(text, modifier, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold), color = Msst.colors.textSecondary)
+/** Why a game discovery packet was dropped (`secure_discovery.drop`). */
+private fun dropReasonLabel(reason: String) = when (reason) {
+    "unverified_sender" -> "发送方未经验证"
+    "duplicate" -> "经其他中转重复到达"
+    "replay" -> "重放"
+    else -> reason
+}
 
 /** "Automatic" or a custom integer within [range] (MTU, keepalive). */
 @Composable

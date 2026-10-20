@@ -8,6 +8,7 @@ import com.msst.net.model.ControllerView
 import com.msst.net.model.FirewallRule
 import com.msst.net.model.PermissionGroup
 import com.msst.net.model.ProtocolPort
+import com.msst.net.model.RoomRelay
 import com.msst.net.model.SystemState
 import com.msst.net.platform.DeviceApp
 
@@ -52,7 +53,7 @@ fun coordinatorActionsAvailable(view: ControllerView?): Boolean =
 fun coreStatusLabel(view: ControllerView?, backendError: String?): String {
     val v = view ?: return if (backendError != null) "无法读取控制器状态：$backendError" else "检查中…"
     return when (coreStatus(v, backendError)) {
-        CoreStatus.Ok -> "客户端核心状态正常"
+        CoreStatus.Ok -> if (v.state.health?.coordinatorCredential == "guest") "客户端核心状态正常（访客身份：仅可使用房间模式）" else "客户端核心状态正常"
         CoreStatus.Warning -> when {
             coordinatorUnreachable(v) -> "客户端核心无法连接协调服务器"
             v.state.sync.failed -> "客户端核心部分状态读取失败"
@@ -254,4 +255,17 @@ fun filterApps(apps: List<DeviceApp>, query: String, showSystem: Boolean, select
         .filter { it.packageName in selected || showSystem || !it.system }
         .filter { q.isEmpty() || it.label.contains(q, ignoreCase = true) || it.packageName.contains(q, ignoreCase = true) }
         .sortedWith(compareBy<DeviceApp>({ it.packageName !in selected }, { it.label.lowercase() }))
+}
+
+/** The room relay line of the room view; null when the room has none. */
+fun roomRelayLabel(r: RoomRelay?): String? {
+    r ?: return null
+    val kind = if (r.selfHosted) "此房间使用自托管中转服务器" else "此房间使用官方中转服务器"
+    val state = when (r.state) {
+        "ok" -> "正常"
+        "probing" -> "检测中"
+        "down" -> "不可用，已回退到各自的中转服务器"
+        else -> "状态未知"
+    }
+    return "$kind ${r.address}（$state）"
 }

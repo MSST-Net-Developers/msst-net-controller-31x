@@ -7,6 +7,7 @@ import com.msst.net.model.Health
 import com.msst.net.model.OperationState
 import com.msst.net.model.PermissionGroup
 import com.msst.net.model.ProtocolPort
+import com.msst.net.model.RoomRelay
 import com.msst.net.model.SyncState
 import com.msst.net.model.SystemState
 import com.msst.net.platform.ControllerFeatures
@@ -30,6 +31,7 @@ import com.msst.net.state.normalizeNamespace
 import com.msst.net.state.oneDecimal
 import com.msst.net.state.operationStage
 import com.msst.net.state.pathLabel
+import com.msst.net.state.roomRelayLabel
 import com.msst.net.state.validHandle
 import com.msst.net.state.validPortExpr
 import kotlinx.serialization.json.JsonObject
@@ -191,5 +193,17 @@ class PresentationTest {
         assertTrue(mobile.interactiveAuth)
         assertTrue(web.manualRuleCreation)
         assertFalse(web.interactiveAuth)
+    }
+
+    @Test
+    fun roomRelayAndGuestLabels() {
+        assertNull(roomRelayLabel(null))
+        assertEquals("此房间使用自托管中转服务器 r.example:7000（不可用，已回退到各自的中转服务器）", roomRelayLabel(RoomRelay("r.example:7000", true, "down")))
+        assertEquals("此房间使用官方中转服务器 198.51.100.1:7000（正常）", roomRelayLabel(RoomRelay("198.51.100.1:7000", false, "ok")))
+        val guest = ControllerView(
+            connection = ConnectionStatus.Connected,
+            state = SystemState(health = Health(status = "ok", wsConnected = true, coordinatorCredential = "guest")),
+        )
+        assertEquals("客户端核心状态正常（访客身份：仅可使用房间模式）", coreStatusLabel(guest, null))
     }
 }

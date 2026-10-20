@@ -70,8 +70,9 @@ data class EndpointRecord(val endpoints: List<String> = emptyList(), val timesta
 @Serializable
 data class EndpointInfo(val current: List<String> = emptyList(), val history: List<EndpointRecord> = emptyList())
 
+/** An official relay (`GET /relays`, passed through by Core). */
 @Serializable
-data class Relay(val addr: String)
+data class Relay(val addr: String, val features: List<String> = emptyList())
 
 @Serializable
 data class RelayList(
@@ -79,6 +80,29 @@ data class RelayList(
     val current: String? = null,
     @SerialName("rtt_ms") val rttMs: Map<String, Double> = emptyMap(),
     @SerialName("secure_discovery") val secureDiscovery: SecureDiscovery? = null,
+    /** Registration with the current relay (0.4). */
+    val registration: RelayRegistration? = null,
+    /** The room's own relay; null outside a room that has one (0.4). */
+    @SerialName("room_relay") val roomRelay: RoomRelayDiag? = null,
+)
+
+@Serializable
+data class RelayRegistration(
+    /** `sreg1` (authenticated) or `legacy`. */
+    val mode: String = "",
+    @SerialName("tx_sreg") val txSreg: Long = 0,
+    /** Unix seconds a relay-path probe last came back through our relay. */
+    @SerialName("last_relay_path_ok_at") val lastRelayPathOkAt: Long? = null,
+)
+
+@Serializable
+data class RoomRelayDiag(
+    val address: String = "",
+    @SerialName("self_hosted") val selfHosted: Boolean = false,
+    val state: String = "",
+    /** Resolved `IP:port`. */
+    val addr: String? = null,
+    @SerialName("tx_sreg") val txSreg: Long = 0,
 )
 
 /** Game discovery through the current relay (`GetRelays`).  Inactive when
@@ -87,8 +111,10 @@ data class RelayList(
 data class SecureDiscovery(
     val active: Boolean = false,
     @SerialName("rx_accepted") val rxAccepted: Long = 0,
-    /** Dropped packets by reason (`unverified_sender`, `replay`, …). */
+    /** Dropped packets by reason (`unverified_sender`, `duplicate`, …). */
     val drop: Map<String, Long> = emptyMap(),
+    /** Relays discovery goes to (`IP:port`; empty outside a room). */
+    val relays: List<String> = emptyList(),
 )
 
 @Serializable
@@ -105,7 +131,8 @@ data class LogList(val entries: List<LogEntry> = emptyList())
 /** Why Core allowed or denied an access (`type` tagged). */
 @Serializable
 data class AccessReason(
-    /** `matched_rule`, `interactive_auth`, `interactive_auth_timeout`, `default_deny`. */
+    /** `matched_rule`, `interactive_auth`, `interactive_auth_timeout`,
+     *  `interactive_auth_limit`, `default_deny`. */
     val type: String = "",
     @SerialName("rule_id") val ruleId: String? = null,
     val comment: String? = null,

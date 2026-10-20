@@ -520,11 +520,14 @@ fn apply_event_to(st: &mut SystemState, event: &IpcEvent, full_events: bool) -> 
             }
             (vec![AclGroups], vec![AclGroups])
         }
-        IpcEvent::RoomStateChanged { room_id, room_name, peers, relay } if full_events => {
+        IpcEvent::RoomStateChanged { room_id, room_name, peers, relay, room_relay } if full_events => {
             // Protocol 0.3: same content as GetSystemState's room view.
             match peers.iter().map(|p| serde_json::from_value::<RoomPeer>(p.clone())).collect::<std::result::Result<Vec<_>, _>>() {
                 Ok(peers) => {
-                    st.room = RoomState { room_id: room_id.clone(), room_name: room_name.clone(), relay: relay.clone(), peers };
+                    // An undecodable room relay is shown as none rather than
+                    // dropping the whole room view.
+                    let room_relay = room_relay.clone().and_then(|v| serde_json::from_value(v).ok());
+                    st.room = RoomState { room_id: room_id.clone(), room_name: room_name.clone(), relay: relay.clone(), peers, room_relay };
                     (vec![Room], vec![])
                 }
                 Err(_) => (vec![], vec![Room, Nodes]),
@@ -606,7 +609,8 @@ mod tests {
             "device_hostname": "pc.alice.ezplay.msst.net",
             "is_authenticated": true, "auth_expires_at": 1_900_000_000i64,
             "ws_connected": true, "coordinator_state": "Connected", "tun_ready": true,
-            "relay": "1.2.3.4:3478", "peer_count": 1, "rule_count": 1, "ping_enabled": false
+            "relay": "1.2.3.4:3478", "peer_count": 1, "rule_count": 1, "ping_enabled": false,
+            "coordinator_credential": "guest"
         })
     }
 
@@ -619,6 +623,32 @@ mod tests {
             "enabled": true, "comment": "mc",
             "principal_mnemonics": {}, "pending_migration": false
         }]})
+    }
+
+    #[tokio::test]
+    async fn room_relay_from_events_and_queries() {
+        let store = StateStore::new();
+        store.set_protocol_minor(4).await;
+        let event = |room_relay: Value| IpcEvent::RoomStateChanged {
+            room_id: Some("space-1".into()),
+            room_name: Some("game".into()),
+            peers: vec![json!({ "device_id": "device-00000001" })],
+            relay: Some("1.2.3.4:3478".into()),
+            room_relay: Some(room_relay),
+        };
+        store.apply_event(&event(json!({ "address": "relay.example.com:7000", "self_hosted": true, "state": "down" }))).await;
+        let r = store.snapshot().await.room.room_relay.unwrap();
+        assert_eq!((r.address.as_str(), r.self_hosted, r.state.as_str()), ("relay.example.com:7000", true, "down"));
+        // Malformed: no room relay, but the room itself is kept.
+        store.apply_event(&event(json!("bogus"))).await;
+        let room = store.snapshot().await.room;
+        assert_eq!((room.room_id.as_deref(), room.room_relay), (Some("space-1"), None));
+
+        let q = json!({ "room_id": "space-2", "room_name": "g", "relay": null, "peers": [],
+                        "room_relay": { "address": "5.6.7.8:7000", "self_hosted": false, "state": "ok" } });
+        let store = StateStore::new();
+        assert!(store.apply_resource(0, ResourceData::room(&q).unwrap()).await);
+        assert_eq!(store.snapshot().await.room.room_relay.unwrap().state, "ok");
     }
 
     #[tokio::test]
@@ -653,7 +683,8 @@ mod tests {
 
         let s = store.snapshot().await;
         let h = s.health.unwrap();
-        assert!(h.is_authenticated);
+        assert_eq!(h.ping_enabled, Some(false));
+        assert_eq!(h.coordinator_credential.as_deref(), Some("guest"));
         assert_eq!(h.ping_enabled, Some(false));
         assert_eq!(s.room.room_id.as_deref(), Some("space-1"));
         assert_eq!(s.room.peers[0].ipv4.as_deref(), Some("172.22.0.1"));

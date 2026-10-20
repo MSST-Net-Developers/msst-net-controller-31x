@@ -56,7 +56,9 @@ object Req {
     fun getServices() = q("get_services")
 
     // Commands
-    fun createRoom(roomName: String, password: String?) = q("create_room", "room_name" to roomName, "password" to password)
+    /** [relay]: an official relay's address or a `msst-relay://` link (0.4). */
+    fun createRoom(roomName: String, password: String?, relay: String? = null, relayPassword: String? = null) =
+        q("create_room", "room_name" to roomName, "password" to password, "relay" to relay, "relay_password" to relayPassword)
     fun joinRoom(roomId: String, password: String?) = q("join_room", "room_id" to roomId, "password" to password)
     fun leaveRoom(roomId: String) = q("leave_room", "room_id" to roomId)
     fun createAclRule(rule: JsonObject) = q("create_acl_rule", "rule" to rule)

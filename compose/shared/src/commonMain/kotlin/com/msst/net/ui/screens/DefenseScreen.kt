@@ -291,6 +291,7 @@ private fun reasonLabel(r: AccessReason): String = when (r.type) {
     "matched_rule" -> r.comment?.let { "规则备注：$it" } ?: "规则 ${r.ruleId.orEmpty().take(8)}"
     "interactive_auth" -> "交互式授权"
     "interactive_auth_timeout" -> "交互式授权超时"
+    "interactive_auth_limit" -> "待处理的访问请求过多（未弹出提示）"
     "default_deny" -> "无匹配规则（默认拒绝）"
     else -> "未知原因"
 }

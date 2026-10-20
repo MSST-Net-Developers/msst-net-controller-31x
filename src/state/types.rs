@@ -96,6 +96,9 @@ pub struct HealthState {
     /// everything).  Kept as text so an unknown future role does not make
     /// the whole Health response undecodable.
     pub ipc_role: Option<String>,
+    /// Credential of Core's coordinator connection (protocol 0.4): `"oidc"`,
+    /// `"guest"` (no valid MSST login: room mode only) or `"none"`.
+    pub coordinator_credential: Option<String>,
 }
 
 impl HealthState {
@@ -143,6 +146,20 @@ pub struct RoomState {
     pub room_name: Option<String>,
     pub relay: Option<String>,
     pub peers: Vec<RoomPeer>,
+    /// The relay the room creator chose for room traffic (protocol 0.4);
+    /// `None` = not specified (members use their own relays).
+    pub room_relay: Option<RoomRelay>,
+}
+
+/// A room's own relay, as Core reports it.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RoomRelay {
+    pub address: String,
+    pub self_hosted: bool,
+    /// `probing`, `ok` (room traffic uses it) or `down` (members fall back
+    /// to their own relays).
+    pub state: String,
 }
 
 /// A peer in the current room (including this device).

@@ -18,7 +18,10 @@ import com.msst.net.state.ControllerStore
 import com.msst.net.state.OidcFlow
 import com.msst.net.state.Phase
 import com.msst.net.state.PresetDevice
+import com.msst.net.state.RoomCreateState
 import com.msst.net.state.RoomJoinState
+import com.msst.net.state.RoomRelayChoice
+import com.msst.net.state.relayLinkHasPassword
 import com.msst.net.state.RuleWizardState
 import com.msst.net.state.SourceMode
 import com.msst.net.state.TargetMode
@@ -65,8 +68,10 @@ private class FakeBackend : ControllerBackend {
     override val notices = noticeFlow
 }
 
+private fun joinParams(req: IpcRequest) = req["params"]!!.jsonObject
+
 private fun joinPassword(req: IpcRequest): String? =
-    req["params"]!!.jsonObject["password"]?.jsonPrimitive?.contentOrNull
+    joinParams(req)["password"]?.jsonPrimitive?.contentOrNull
 
 private fun health(authenticated: Boolean) =
     ControllerView(state = SystemState(health = Health(status = "ok", isAuthenticated = authenticated)))
@@ -289,5 +294,67 @@ class StateTest {
         assertFalse(s.askPassword)
         assertEquals("", s.password)
         assertNull(s.error)
+    }
+
+    @Test
+    fun createRoomRelayChoices() {
+        val s = RoomCreateState()
+        s.name = " game "
+        assertNull(joinParams(s.request())["relay"]?.jsonPrimitive?.contentOrNull, "不指定: no relay")
+
+        s.relay = RoomRelayChoice.Official("198.51.100.1:7000")
+        assertEquals("198.51.100.1:7000", joinParams(s.request())["relay"]!!.jsonPrimitive.content)
+
+        s.relay = RoomRelayChoice.SelfHosted
+        assertFalse(s.canSubmit, "a self-hosted relay needs its link")
+        s.relayLink = " msst-relay://r.example:7000#key "
+        assertFalse(s.showRelayPassword)
+        assertTrue(s.canSubmit)
+        s.relayLink = "msst-relay://r.example:7000#key?pw=1"
+        assertTrue(s.showRelayPassword)
+        assertFalse(s.canSubmit, "the link says the relay has a password")
+        s.relayPassword = "relay-pw"
+        val p = joinParams(s.request())
+        assertEquals("msst-relay://r.example:7000#key?pw=1", p["relay"]!!.jsonPrimitive.content)
+        assertEquals("relay-pw", p["relay_password"]!!.jsonPrimitive.content)
+        assertEquals("game", p["room_name"]!!.jsonPrimitive.content)
+
+        // Switching away drops the relay password.
+        s.relay = RoomRelayChoice.Unspecified
+        assertNull(joinParams(s.request())["relay_password"]?.jsonPrimitive?.contentOrNull)
+    }
+
+    @Test
+    fun createRoomFollowsCoreRelayErrors() = runTest {
+        val backend = FakeBackend()
+        val s = RoomCreateState()
+        s.name = "game"
+        s.relay = RoomRelayChoice.SelfHosted
+        s.relayLink = "msst-relay://r.example:7000#key"
+        backend.respond = { throw ApiException("该中转服务器设有接入密码，请输入中转服务器接入密码。", "core", "relay_password_required") }
+        s.submit(backend)
+        assertTrue(s.showRelayPassword, "Core asked for the relay password")
+        assertEquals(Phase.Error, s.phase)
+
+        s.relayPassword = "pw"
+        backend.respond = { throw ApiException("…", "core", "room_password_required") }
+        s.submit(backend)
+        assertTrue(s.hasPassword, "the relay requires a room password")
+        assertEquals("所选中转服务器要求房间设置密码，请为房间设置密码。", s.error)
+
+        s.password = "room-pw"
+        backend.respond = { obj() }
+        s.submit(backend)
+        assertEquals(Phase.Success, s.phase)
+        assertEquals("room-pw", joinParams(backend.sent.last())["password"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun relayLinkPasswordHint() {
+        assertTrue(relayLinkHasPassword("msst-relay://h:1#k?pw=1"))
+        assertTrue(relayLinkHasPassword(" MSST-RELAY://h:1#k?x=2&pw=1 "))
+        assertFalse(relayLinkHasPassword("msst-relay://h:1#k"))
+        assertFalse(relayLinkHasPassword("msst-relay://h:1#k?pw=0"))
+        assertFalse(relayLinkHasPassword("198.51.100.1:7000"))
     }
 }

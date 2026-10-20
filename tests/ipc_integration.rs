@@ -433,7 +433,7 @@ fn room_core() -> FakeCore {
 }
 
 fn create_room() -> IpcRequest {
-    IpcRequest::CreateRoom { room_name: "game".into(), password: None }
+    IpcRequest::CreateRoom { room_name: "game".into(), password: None, relay: None, relay_password: None }
 }
 
 #[tokio::test]

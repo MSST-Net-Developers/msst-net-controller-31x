@@ -140,6 +140,9 @@ data class Health(
     @SerialName("access_auth_required") val accessAuthRequired: Boolean? = null,
     /** This connection's permission tier (protocol 0.4; null from older Cores). */
     @SerialName("ipc_role") val ipcRole: String? = null,
+    /** Credential of Core's coordinator connection (protocol 0.4): `oidc`,
+     *  `guest` (no valid MSST login: room mode only) or `none`. */
+    @SerialName("coordinator_credential") val coordinatorCredential: String? = null,
 ) {
     /** Core reported this connection as read-only. */
     val isViewer get() = ipcRole == "viewer"
@@ -175,9 +178,21 @@ data class RoomState(
     @SerialName("room_name") val roomName: String? = null,
     val relay: String? = null,
     val peers: List<RoomPeer> = emptyList(),
+    /** The relay the room creator chose (protocol 0.4); null = not specified. */
+    @SerialName("room_relay") val roomRelay: RoomRelay? = null,
 ) {
     val inRoom get() = !roomId.isNullOrEmpty()
 }
+
+/** A room's own relay as Core reports it. */
+@Serializable
+data class RoomRelay(
+    val address: String = "",
+    @SerialName("self_hosted") val selfHosted: Boolean = false,
+    /** `probing`, `ok` (room traffic uses it) or `down` (members fall back
+     *  to their own relays). */
+    val state: String = "",
+)
 
 @Serializable
 data class ProtocolPort(val proto: String, val start: Int, val end: Int)

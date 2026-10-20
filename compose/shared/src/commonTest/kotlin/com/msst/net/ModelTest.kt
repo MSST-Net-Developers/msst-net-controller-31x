@@ -3,8 +3,12 @@ package com.msst.net
 import com.msst.net.model.ConnectionStatus
 import com.msst.net.model.ControllerJson
 import com.msst.net.model.ControllerView
+import com.msst.net.model.Health
 import com.msst.net.model.PathView
 import com.msst.net.model.RelayList
+import com.msst.net.model.RelayRegistration
+import com.msst.net.model.RoomRelay
+import com.msst.net.model.RoomState
 import com.msst.net.model.AuthDecision
 import com.msst.net.model.Req
 import com.msst.net.model.UiNotice
@@ -120,5 +124,34 @@ class ModelTest {
         assertTrue(sd.active)
         assertEquals(3, sd.rxAccepted)
         assertEquals(4, sd.drop["unverified_sender"])
+    }
+
+    @Test
+    fun decodesRoomRelayAndGuestCredential() {
+        // Shapes from Core's rooms.rs (room view), diagnostics.rs (GetRelays)
+        // and the Health vector.
+        val room = ControllerJson.decodeFromString<RoomState>("""
+            {"room_id":"space-1","room_name":"g","relay":null,"peers":[],
+             "room_relay":{"address":"relay.example.com:7000","self_hosted":true,"state":"down"}}""")
+        assertEquals(RoomRelay("relay.example.com:7000", true, "down"), room.roomRelay)
+        assertNull(ControllerJson.decodeFromString<RoomState>("""{"room_id":null,"room_relay":null}""").roomRelay)
+        assertEquals("guest", ControllerJson.decodeFromString<Health>("""{"status":"ok","coordinator_credential":"guest"}""").coordinatorCredential)
+
+        val relays = ControllerJson.decodeFromString<RelayList>("""
+            {"relays":[{"addr":"198.51.100.1:7000","pub_key":"k","features":["sdisc1","sreg1"]}],
+             "secure_discovery":{"rx_accepted":1,"active":true,"drop":{"duplicate":2},"relays":["198.51.100.1:7000","203.0.113.9:7000"]},
+             "registration":{"mode":"sreg1","tx_sreg":5,"last_relay_path_ok_at":null},
+             "room_relay":{"address":"relay.example.com:7000","self_hosted":true,"state":"ok","addr":"203.0.113.9:7000","tx_sreg":3}}""")
+        assertEquals(listOf("sdisc1", "sreg1"), relays.relays[0].features)
+        assertEquals(2, relays.secureDiscovery!!.relays.size)
+        assertEquals(RelayRegistration("sreg1", 5, null), relays.registration)
+        assertEquals("203.0.113.9:7000", relays.roomRelay!!.addr)
+    }
+
+    @Test
+    fun createRoomCarriesTheRelay() {
+        val p = Req.createRoom("game", null, "msst-relay://r:7000#k?pw=1", "pw")["params"]!!.jsonObject
+        assertEquals("msst-relay://r:7000#k?pw=1", p["relay"]!!.jsonPrimitive.content)
+        assertEquals("pw", p["relay_password"]!!.jsonPrimitive.content)
     }
 }

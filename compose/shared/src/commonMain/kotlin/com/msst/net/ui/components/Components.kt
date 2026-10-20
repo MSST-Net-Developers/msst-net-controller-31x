@@ -212,6 +212,11 @@ fun InlineNote(text: String, modifier: Modifier = Modifier, selectable: Boolean 
 }
 
 /** Monospace, selectable value (IDs, addresses). */
+/** A label above a form field or a group of lines. */
+@Composable
+fun FieldLabel(text: String, modifier: Modifier = Modifier) =
+    Text(text, modifier, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold), color = Msst.colors.textSecondary)
+
 @Composable
 fun MonoText(
     text: String,
