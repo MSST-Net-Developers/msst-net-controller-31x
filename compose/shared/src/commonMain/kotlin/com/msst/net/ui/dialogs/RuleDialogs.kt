@@ -44,6 +44,8 @@ import com.msst.net.model.obj
 import com.msst.net.platform.formatDateTime
 import com.msst.net.platform.query
 import com.msst.net.state.PresetDevice
+import com.msst.net.state.RoomMembers
+import com.msst.net.state.RuleSourcePreset
 import com.msst.net.state.RuleWizardState
 import com.msst.net.state.SourceMode
 import com.msst.net.state.TargetMode
@@ -73,12 +75,12 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun RuleWizardDialog(from: FirewallRule?, device: PresetDevice? = null, onClose: () -> Unit) {
+fun RuleWizardDialog(from: FirewallRule?, preset: RuleSourcePreset? = null, onClose: () -> Unit) {
     val ctx = LocalController.current
     val view by ctx.store.view.collectAsState()
     val groups = view?.state?.aclGroups.orEmpty()
     val nodes = view?.state?.nodes?.values.orEmpty()
-    val w = remember { RuleWizardState(from, device) }
+    val w = remember { RuleWizardState(from, preset) }
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
     var categories by remember { mutableStateOf(listOf<ServiceCategory>()) }
@@ -108,7 +110,8 @@ fun RuleWizardDialog(from: FirewallRule?, device: PresetDevice? = null, onClose:
     }
 
     val title = when {
-        device != null -> "为 ${device.name} 添加防火墙规则"
+        preset is PresetDevice -> "为 ${preset.name} 添加防火墙规则"
+        preset == RoomMembers -> "添加房间级规则"
         w.copied -> "复制为新规则"
         else -> "新建防火墙规则"
     }
@@ -118,7 +121,7 @@ fun RuleWizardDialog(from: FirewallRule?, device: PresetDevice? = null, onClose:
         else PrimaryButton(if (busy) "创建中…" else "创建", ::submit, enabled = view?.connected == true, busy = busy)
     }) {
         WizardSteps(w.step)
-        if (device != null) FixedSource(device)
+        if (preset != null) FixedSource(preset)
         when (w.step) {
             1 -> {
                 StepDesc("选择此规则匹配的来源")
@@ -251,18 +254,26 @@ private fun WizardSteps(step: Int) {
 
 /** The source of a rule started from a room member: shown, not editable. */
 @Composable
-private fun FixedSource(device: PresetDevice) {
+private fun FixedSource(preset: RuleSourcePreset) {
     val c = Msst.colors
     Row(
         Modifier.fillMaxWidth().clip(Radius.md).background(c.bgSecondary).border(1.dp, c.borderLight, Radius.md)
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        MIcon(MdiIcons.Monitor, 16.dp, c.primary)
+        MIcon(if (preset is PresetDevice) MdiIcons.Monitor else MdiIcons.AccountGroupOutline, 16.dp, c.primary)
         Spacer(Modifier.width(8.dp))
         Column(Modifier.weight(1f)) {
-            Text("来源设备：${device.name}", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold), color = c.textPrimary)
-            com.msst.net.ui.components.MonoText(device.deviceId, color = c.textMuted, small = true)
+            when (preset) {
+                is PresetDevice -> {
+                    Text("来源设备：${preset.name}", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold), color = c.textPrimary)
+                    com.msst.net.ui.components.MonoText(preset.deviceId, color = c.textMuted, small = true)
+                }
+                RoomMembers -> {
+                    Text("来源：当前所有房间成员", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold), color = c.textPrimary)
+                    Text("规则自动匹配当前加入的所有房间成员，成员变化时无需修改。", style = MaterialTheme.typography.labelSmall, color = c.textMuted)
+                }
+            }
         }
     }
 }

@@ -64,6 +64,8 @@ import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.DpOffset
 import com.msst.net.state.PresetDevice
+import com.msst.net.state.RoomMembers
+import com.msst.net.state.RuleSourcePreset
 import com.msst.net.ui.LocalCompact
 import com.msst.net.ui.components.contextMenuGesture
 import com.msst.net.ui.dialogs.RuleWizardDialog
@@ -179,9 +181,11 @@ private fun RoomRelayBar(relay: RoomRelay) {
 }
 
 /**
- * A room member.  Other members have a context menu (secondary click on
- * desktop / WebUI, long press on touch) with "添加防火墙规则", which opens
- * the rule wizard with this device as the fixed source.
+ * A room member.  Every card, ours included, has a context menu (secondary
+ * click on desktop / WebUI, long press on touch) with "添加房间级规则",
+ * which opens the rule wizard with all room members as the fixed source.
+ * Other members' cards also offer "添加防火墙规则" with this device as the
+ * source.
  */
 @Composable
 private fun PeerCard(peer: RoomPeer, self: Boolean, path: String?, connected: Boolean) {
@@ -189,7 +193,8 @@ private fun PeerCard(peer: RoomPeer, self: Boolean, path: String?, connected: Bo
     val services = LocalController.current.services
     val name = peer.displayName ?: peer.deviceId
     var menuAt by remember { mutableStateOf<DpOffset?>(null) }
-    var addRule by remember { mutableStateOf(false) }
+    var addRule by remember { mutableStateOf<RuleSourcePreset?>(null) }
+    val forDevice = PresetDevice(peer.deviceId, name)
     val haptics = LocalHapticFeedback.current
     val density = LocalDensity.current
     var height by remember { mutableStateOf(0) }
@@ -201,25 +206,39 @@ private fun PeerCard(peer: RoomPeer, self: Boolean, path: String?, connected: Bo
     Box(
         Modifier
             .onSizeChanged { height = it.height }
-            .contextMenuGesture(enabled = !self) { openMenu(it) }
+            .contextMenuGesture(enabled = true) { openMenu(it) }
             .semantics {
-                if (!self) customActions = listOf(CustomAccessibilityAction("添加防火墙规则") { addRule = true; true })
+                customActions = listOfNotNull(
+                    if (self) null else CustomAccessibilityAction("添加防火墙规则") { addRule = forDevice; true },
+                    CustomAccessibilityAction("添加房间级规则") { addRule = RoomMembers; true },
+                )
             },
     ) {
         PeerCardContent(peer, self, path, services)
         DropdownMenu(menuAt != null, { menuAt = null }, offset = menuAt ?: DpOffset.Zero, containerColor = c.bgPrimary) {
+            if (!self) {
+                DropdownMenuItem(
+                    text = { Text("添加防火墙规则", style = MaterialTheme.typography.bodyMedium) },
+                    leadingIcon = { MIcon(MdiIcons.ShieldOutline, 18.dp, c.primary) },
+                    enabled = connected,
+                    onClick = {
+                        menuAt = null
+                        addRule = forDevice
+                    },
+                )
+            }
             DropdownMenuItem(
-                text = { Text("添加防火墙规则", style = MaterialTheme.typography.bodyMedium) },
-                leadingIcon = { MIcon(MdiIcons.ShieldOutline, 18.dp, c.primary) },
+                text = { Text("添加房间级规则", style = MaterialTheme.typography.bodyMedium) },
+                leadingIcon = { MIcon(MdiIcons.AccountGroupOutline, 18.dp, c.primary) },
                 enabled = connected,
                 onClick = {
                     menuAt = null
-                    addRule = true
+                    addRule = RoomMembers
                 },
             )
         }
     }
-    if (addRule) RuleWizardDialog(null, PresetDevice(peer.deviceId, name)) { addRule = false }
+    addRule?.let { RuleWizardDialog(null, it) { addRule = null } }
 }
 
 @Composable

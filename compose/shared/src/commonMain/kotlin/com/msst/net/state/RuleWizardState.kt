@@ -18,9 +18,17 @@ enum class TargetMode { Services, Ports }
 data class SourceItem(val kind: String, val id: String)
 data class PortItem(val proto: String, val port: String)
 
+/** A rule source fixed by the room view's member menu: the wizard skips
+ *  the source step. */
+sealed interface RuleSourcePreset
+
 /** A device picked in the room view ("添加防火墙规则"): its canonical ID as
  *  reported by Core, and the name shown for it. */
-data class PresetDevice(val deviceId: String, val name: String)
+data class PresetDevice(val deviceId: String, val name: String) : RuleSourcePreset
+
+/** "添加房间级规则": Core's `space` source, matching every current room
+ *  member (whichever card the menu was opened on). */
+data object RoomMembers : RuleSourcePreset
 
 /**
  * Form state of the three-step rule wizard (3.0.x).  The request uses
@@ -28,7 +36,7 @@ data class PresetDevice(val deviceId: String, val name: String)
  * resolves mnemonics to stable IDs (unresolvable ones are rejected), so
  * nothing here resolves identities or evaluates rules.
  */
-class RuleWizardState(from: FirewallRule? = null, val device: PresetDevice? = null) {
+class RuleWizardState(from: FirewallRule? = null, val preset: RuleSourcePreset? = null) {
     var step by mutableStateOf(1)
     var sourceMode by mutableStateOf(SourceMode.Group)
     var groupId by mutableStateOf<String?>(null)
@@ -49,15 +57,19 @@ class RuleWizardState(from: FirewallRule? = null, val device: PresetDevice? = nu
 
     val copied = from != null
 
-    /** With a [device] the source is fixed: the wizard starts at the targets. */
-    val firstStep = if (device != null) 2 else 1
+    /** With a [preset] the source is fixed: the wizard starts at the targets. */
+    val firstStep = if (preset != null) 2 else 1
 
     init {
-        if (device != null) {
-            sourceMode = SourceMode.Manual
-            sources = listOf(SourceItem("device", device.deviceId))
-            step = 2
+        when (preset) {
+            is PresetDevice -> {
+                sourceMode = SourceMode.Manual
+                sources = listOf(SourceItem("device", preset.deviceId))
+            }
+            RoomMembers -> sourceMode = SourceMode.Space
+            null -> {}
         }
+        step = firstStep
         // Prefill from an existing rule ("复制为新规则").
         if (from != null) {
             val pg = from.permissionGroup

@@ -18,6 +18,7 @@ import com.msst.net.state.ControllerStore
 import com.msst.net.state.OidcFlow
 import com.msst.net.state.Phase
 import com.msst.net.state.PresetDevice
+import com.msst.net.state.RoomMembers
 import com.msst.net.state.RoomCreateState
 import com.msst.net.state.RoomJoinState
 import com.msst.net.state.RoomRelayChoice
@@ -161,7 +162,7 @@ class StateTest {
 
     @Test
     fun wizardForARoomMemberOnlyAsksForTargetsAndComment() {
-        val w = RuleWizardState(device = PresetDevice("device-0123", "Bob 的台式机"))
+        val w = RuleWizardState(preset = PresetDevice("device-0123", "Bob 的台式机"))
         assertEquals(2, w.step)
         w.back()
         assertEquals(2, w.step, "the source step cannot be reopened")
@@ -183,6 +184,25 @@ class StateTest {
         assertEquals("minecraft-java", (r["services"] as JsonArray).single().jsonPrimitive.content)
         assertEquals("allow", r["action"]!!.jsonPrimitive.content)
         assertEquals("Bob 的 MC", r["comment"]!!.jsonPrimitive.content)
+        assertNull(r["group_id"])
+    }
+
+    @Test
+    fun roomLevelRuleMatchesAllRoomMembers() {
+        val w = RuleWizardState(preset = RoomMembers)
+        assertEquals(2, w.step)
+        w.back()
+        assertEquals(2, w.step, "the source step cannot be reopened")
+        w.targetMode = TargetMode.Ports
+        w.portProto = "tcp"
+        w.portInput = "25565"
+        w.addPort()
+        assertTrue(w.next())
+
+        val r = w.request()
+        val principal = (r["principals"] as JsonArray).single() as JsonObject
+        assertEquals("space", principal["kind"]!!.jsonPrimitive.content)
+        assertEquals("*", principal["id"]!!.jsonPrimitive.content)
         assertNull(r["group_id"])
     }
 
