@@ -214,8 +214,9 @@ private fun PeerCardContent(peer: RoomPeer, self: Boolean, path: String?, servic
                     overflow = TextOverflow.Ellipsis,
                 )
                 if (peer.displayName != null) MonoText(peer.deviceId, color = c.textMuted, small = true, selectable = self)
+                // The hostname is how members reach each other; the virtual IP
+                // is not shown.
                 peer.hostname?.let { MonoText(it, color = c.textSecondary, small = true, selectable = self) }
-                peer.ipv4?.let { Text("IPv4 $it", style = MaterialTheme.typography.labelSmall, color = c.textSecondary) }
                 if (!self) {
                     Text(
                         "路径：${path ?: "未知"}",
