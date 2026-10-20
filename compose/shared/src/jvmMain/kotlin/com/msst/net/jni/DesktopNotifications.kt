@@ -19,11 +19,22 @@ object DesktopNotifications {
      *  [onActivate] runs on a native thread when the notification is clicked. */
     @JvmStatic external fun nativeShow(title: String, body: String, onActivate: Runnable?): String
 
-    /** Show a notification; false if it could not be shown natively. */
-    fun show(title: String, body: String, onActivate: (() -> Unit)?): Boolean = try {
-        val r = nativeShow(title, body, onActivate?.let { f -> Runnable { f() } })
-        ControllerJson.parseToJsonElement(r).jsonObject["ok"]?.jsonPrimitive?.booleanOrNull == true
-    } catch (e: LinkageError) { // library or symbol missing
-        false
+    /** Show a notification; false if it could not be shown natively (the
+     *  reason is logged once, so a fallback is never silent). */
+    fun show(title: String, body: String, onActivate: (() -> Unit)?): Boolean {
+        val failure = try {
+            val r = nativeShow(title, body, onActivate?.let { f -> Runnable { f() } })
+            if (ControllerJson.parseToJsonElement(r).jsonObject["ok"]?.jsonPrimitive?.booleanOrNull == true) return true
+            r
+        } catch (e: LinkageError) { // library missing, or one built before nativeShow existed
+            e.toString()
+        }
+        if (!warned) {
+            warned = true
+            System.err.println("MSST-Net: native notification unavailable, using the tray notification: $failure")
+        }
+        return false
     }
+
+    @Volatile private var warned = false
 }

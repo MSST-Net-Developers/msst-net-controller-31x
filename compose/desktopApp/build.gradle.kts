@@ -23,8 +23,6 @@ val nativeDir = rootProject.layout.projectDirectory.dir("rust/target/release")
 compose.desktop {
     application {
         mainClass = "com.msst.net.MainKt"
-        // Development runs (`:desktopApp:run`) load the library from cargo's output.
-        jvmArgs += "-Dmsst.native.dir=${nativeDir.asFile.absolutePath}"
 
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Deb, TargetFormat.Rpm)
@@ -35,4 +33,11 @@ compose.desktop {
             appResourcesRootDir.set(layout.projectDirectory.dir("appResources"))
         }
     }
+}
+
+// Development runs (`:desktopApp:run`) load the library from cargo's output,
+// not from appResources/ (a copy made by build-desktop.sh that may be older).
+// Only the run task gets this: packaged builds must not point at the build tree.
+tasks.withType<JavaExec>().configureEach {
+    if (name == "run") systemProperty("msst.native.dir", nativeDir.asFile.absolutePath)
 }
