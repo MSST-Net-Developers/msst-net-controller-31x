@@ -16,7 +16,9 @@ import com.msst.net.platform.ApiException
 import com.msst.net.platform.ControllerBackend
 import com.msst.net.state.ControllerStore
 import com.msst.net.state.OidcFlow
+import com.msst.net.state.Phase
 import com.msst.net.state.PresetDevice
+import com.msst.net.state.RoomJoinState
 import com.msst.net.state.RuleWizardState
 import com.msst.net.state.SourceMode
 import com.msst.net.state.TargetMode
@@ -31,6 +33,8 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -60,6 +64,9 @@ private class FakeBackend : ControllerBackend {
     override suspend fun retry() = RetryOutcome.Resyncing
     override val notices = noticeFlow
 }
+
+private fun joinPassword(req: IpcRequest): String? =
+    req["params"]!!.jsonObject["password"]?.jsonPrimitive?.contentOrNull
 
 private fun health(authenticated: Boolean) =
     ControllerView(state = SystemState(health = Health(status = "ok", isAuthenticated = authenticated)))
@@ -230,5 +237,57 @@ class StateTest {
         flow.start()
         advanceUntilIdle()
         assertEquals(OidcFlow.Status.Error, flow.status)
+    }
+
+    @Test
+    fun joinAsksForPasswordWhenCoreRequiresOne() = runTest {
+        val backend = FakeBackend()
+        backend.respond = { req ->
+            when (joinPassword(req)) {
+                null -> throw ApiException("该房间设有密码，请输入房间密码。", "core", "room_password_required")
+                "secret" -> obj()
+                else -> throw ApiException("无法加入房间，请检查房间号和密码。", "core", "room_rejected")
+            }
+        }
+        val s = RoomJoinState()
+        s.roomId = " room-1 "
+        s.submit(backend)
+        // No error: the password prompt opens instead.
+        assertTrue(s.askPassword)
+        assertNull(s.error)
+        assertEquals(Phase.Idle, s.phase)
+        assertFalse(s.canSubmit, "an empty password is not sent")
+
+        s.password = "wrong"
+        s.submit(backend)
+        assertTrue(s.askPassword, "a wrong password keeps the prompt open")
+        assertEquals("无法加入房间，请检查房间号和密码。", s.error)
+
+        s.password = "secret"
+        s.submit(backend)
+        assertEquals(Phase.Success, s.phase)
+        assertEquals(listOf(null, "wrong", "secret"), backend.sent.map(::joinPassword))
+        assertEquals("room-1", backend.sent.last()["params"]!!.jsonObject["room_id"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun joinShowsAlreadyInRoomAndPasswordPromptCanBeCancelled() = runTest {
+        val backend = FakeBackend()
+        backend.respond = { throw ApiException("你已在一个房间中，请先退出当前房间。", "core", "already_in_room") }
+        val s = RoomJoinState()
+        s.roomId = "room-2"
+        s.submit(backend)
+        assertFalse(s.askPassword)
+        assertEquals(Phase.Error, s.phase)
+        assertEquals("你已在一个房间中，请先退出当前房间。", s.error)
+
+        backend.respond = { throw ApiException("该房间设有密码，请输入房间密码。", "core", "room_password_required") }
+        s.submit(backend)
+        assertTrue(s.askPassword)
+        s.password = "x"
+        s.cancelPassword()
+        assertFalse(s.askPassword)
+        assertEquals("", s.password)
+        assertNull(s.error)
     }
 }

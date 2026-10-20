@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import com.msst.net.model.IpcRequest
 import com.msst.net.model.Req
 import com.msst.net.state.Phase
+import com.msst.net.state.RoomJoinState
 import com.msst.net.state.attempt
 import com.msst.net.state.errorMessage
 import com.msst.net.state.operationStage
@@ -102,25 +103,45 @@ fun CreateRoomDialog(onClose: () -> Unit) {
 
 @Composable
 fun JoinRoomDialog(onClose: () -> Unit) {
-    var roomId by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    val s = rememberRoomSubmit(onClose)
-    val submit = {
-        if (roomId.isNotBlank() && !s.busy) s.submit(Req.joinRoom(roomId.trim(), password.trim().ifEmpty { null }))
+    val ctx = LocalController.current
+    val scope = rememberCoroutineScope()
+    val s = remember { RoomJoinState() }
+    val submit = { if (s.canSubmit) scope.launch { s.submit(ctx.backend) } }
+    LaunchedEffect(s.phase) {
+        if (s.phase == Phase.Success) {
+            delay(800)
+            onClose()
+        }
     }
+    val view by ctx.store.view.collectAsState()
+    val stage = if (s.busy) operationStage(view?.state, "join_room") else null
 
     Modal(onClose, "加入房间", busy = s.busy, actions = if (s.phase == Phase.Success) null else {
         {
             SecondaryButton("取消", onClose, enabled = !s.busy)
-            PrimaryButton(if (s.busy) "加入中…" else "加入", submit, enabled = roomId.isNotBlank(), busy = s.busy)
+            PrimaryButton(if (s.busy && !s.askPassword) "加入中…" else "加入", { submit() }, enabled = s.roomId.isNotBlank(), busy = s.busy && !s.askPassword)
         }
     }) {
         if (s.phase == Phase.Success) {
             SuccessFeedback("已成功加入房间")
         } else {
-            TextInput(roomId, { roomId = it }, Modifier.fillMaxWidth(), label = "房间号", placeholder = "请输入房间号", enabled = !s.busy, mono = true)
-            TextInput(password, { password = it }, Modifier.fillMaxWidth(), label = "房间密码（可选）", placeholder = "无密码请留空", enabled = !s.busy, password = true, onDone = submit)
-            stageOf(s, "join_room")?.let { InlineNote("$it…") }
+            TextInput(s.roomId, { s.roomId = it }, Modifier.fillMaxWidth(), label = "房间号", placeholder = "请输入房间号", enabled = !s.busy, mono = true, onDone = { submit() })
+            if (!s.askPassword) {
+                stage?.let { InlineNote("$it…") }
+                s.error?.let { InlineError(it) }
+            }
+        }
+    }
+
+    // Core reported that the room has a password.
+    if (s.askPassword && s.phase != Phase.Success) {
+        Modal({ s.cancelPassword() }, "输入房间密码", busy = s.busy, actions = {
+            SecondaryButton("取消", { s.cancelPassword() }, enabled = !s.busy)
+            PrimaryButton(if (s.busy) "加入中…" else "加入", { submit() }, enabled = s.canSubmit, busy = s.busy)
+        }) {
+            InlineNote("房间 ${s.roomId.trim()} 设有密码，请输入房间创建者提供的密码。")
+            TextInput(s.password, { s.password = it }, Modifier.fillMaxWidth(), label = "房间密码", placeholder = "请输入房间密码", enabled = !s.busy, password = true, onDone = { submit() })
+            stage?.let { InlineNote("$it…") }
             s.error?.let { InlineError(it) }
         }
     }

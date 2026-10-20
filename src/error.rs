@@ -198,6 +198,8 @@ fn core_error_message(code: &str, raw: &str) -> String {
         RELAY_UNAVAILABLE => "无法获取可用的中转服务器，请检查网络连接后重试。".into(),
         ROOM_CREATE_FAILED => "创建房间失败，请稍后重试。".into(),
         ROOM_REJECTED => "无法加入房间，请检查房间号和密码。".into(),
+        ROOM_PASSWORD_REQUIRED => "该房间设有密码，请输入房间密码。".into(),
+        ALREADY_IN_ROOM => "你已在一个房间中，请先退出当前房间。".into(),
         PERSIST_FAILED => "客户端核心无法保存配置（磁盘写入失败），更改未生效。".into(),
         PERMISSION_DENIED => "当前账户只有只读权限，不能进行更改。请让管理员把你加入 msst-net 用户组（Windows：MSST-Net Administrators），然后重新启动控制器。".into(),
         BUSY => "客户端核心正忙（同时进行的操作过多），请稍后重试。".into(),

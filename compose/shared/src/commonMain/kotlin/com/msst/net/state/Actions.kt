@@ -1,5 +1,6 @@
 package com.msst.net.state
 
+import com.msst.net.platform.ApiException
 import com.msst.net.platform.userMessage
 import kotlinx.coroutines.CancellationException
 
@@ -15,6 +16,9 @@ suspend fun <T> attempt(block: suspend () -> T): Result<T> = try {
 
 /** The user-facing message of a failed [attempt], or null on success. */
 val Result<*>.errorMessage: String? get() = exceptionOrNull()?.userMessage()
+
+/** Core's (or the Controller's) error code of a failed [attempt]. */
+val Result<*>.errorCode: String? get() = (exceptionOrNull() as? ApiException)?.code
 
 /** Progress of a form submission (`idle → submitting → success | error`). */
 enum class Phase { Idle, Submitting, Success, Error }
