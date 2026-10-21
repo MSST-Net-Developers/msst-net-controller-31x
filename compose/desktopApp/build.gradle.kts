@@ -25,7 +25,7 @@ compose.desktop {
         mainClass = "com.msst.net.MainKt"
 
         nativeDistributions {
-            targetFormats(TargetFormat.Msi, TargetFormat.Deb, TargetFormat.Rpm)
+            targetFormats(TargetFormat.Msi, TargetFormat.Deb, TargetFormat.Rpm, TargetFormat.Dmg)
             packageName = "msst-net-controller"
             packageVersion = providers.gradleProperty("msstVersionName").get().substringBefore('-')
             description = "MSST-Net Controller"
@@ -34,6 +34,17 @@ compose.desktop {
             // Beyond what jlink derives: sun.misc.Unsafe (jdk.unsupported) and
             // java.lang.instrument, as `suggestRuntimeModules` reports.
             modules("java.instrument", "jdk.unsupported")
+
+            windows {
+                // Fixed for every release: an MSI only upgrades the installed
+                // version in place when the upgrade codes match.  Never change it.
+                upgradeUuid = "3896a5fb-1a4b-4ef5-b34e-8409ea570382"
+                menu = true
+                shortcut = true
+            }
+            macOS {
+                bundleID = "com.msst.net.controller"
+            }
         }
 
         // createReleaseDistributable / packageRelease*: shrunk by ProGuard.

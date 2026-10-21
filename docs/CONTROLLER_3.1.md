@@ -57,7 +57,7 @@ state.
 | Library + tests | `cargo test --features webui` |
 | JNI crate tests | `cd compose/rust && cargo test` |
 | Kotlin tests | `cd compose && ./gradlew :shared:jvmTest :shared:testAndroidHostTest` (wasm: `CHROME_BIN=… ./gradlew :shared:wasmJsTest`) |
-| Desktop app | `compose/rust/build-desktop.sh`, then `cd compose && ./gradlew :desktopApp:run`; to ship, `createReleaseDistributable` / `packageReleaseDeb` / `packageReleaseMsi` (ProGuard, rules in `desktopApp/proguard-rules.pro`) |
+| Desktop app | `compose/rust/build-desktop.sh`, then `cd compose && ./gradlew :desktopApp:run`; to ship, `createReleaseDistributable` / `packageReleaseDeb` / `packageReleaseRpm` / `packageReleaseMsi` / `packageReleaseDmg` (on each OS; ProGuard, rules in `desktopApp/proguard-rules.pro`; the MSI upgrade code is fixed so new MSIs upgrade in place) |
 | WebUI | `cd compose && ./gradlew :webApp:wasmJsBrowserDistribution`, then `cargo build --release --features webui --bin msst-net-webui` (the web build is embedded) |
 | Android | `compose/rust/build-android.sh` (needs cargo-ndk + NDK), then `cd compose && ./gradlew :androidApp:assembleRelease` (one APK per ABI; `bundleRelease` for an AAB) |
 
