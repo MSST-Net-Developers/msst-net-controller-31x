@@ -62,7 +62,17 @@ state.
 | Android | `compose/rust/build-android.sh` (needs cargo-ndk + NDK), then `cd compose && ./gradlew :androidApp:assembleRelease` (one APK per ABI; `bundleRelease` for an AAB) |
 
 The JNI crate depends on the Core repo by path (`../msst-net-core-31x`), as
-before.  UI font: 寒蝉全圆体 (ChillRound, SIL OFL 1.1), bundled as Compose
+before.
+
+GitHub Actions: `.github/workflows/ci.yml` runs the tests above on every
+push; `release.yml` builds a `v<version>` tag into the release the
+installer's deployment contract defines (`msst-net-installer-31x`
+`docs/DEPLOYMENT_CONTRACT.md`: contract file names, signed
+`manifest.json`, the `abjust/msstnet31x-webui` image), plus the signed
+per-ABI Android APKs (not in the manifest: Android doesn't use the
+installer).  It builds against Core's newest release unless
+`MSST_CORE_REF` names another.  Its header lists the secrets and variables
+it needs.  UI font: 寒蝉全圆体 (ChillRound, SIL OFL 1.1), bundled as Compose
 resources.
 
 ### WebUI

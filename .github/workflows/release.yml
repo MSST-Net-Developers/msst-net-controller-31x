@@ -1,0 +1,465 @@
+name: Release
+
+# Builds the Controller release as the 3.1.x deployment contract defines it
+# (msst-net-installer-31x docs/DEPLOYMENT_CONTRACT.md):
+#
+#   msst-net-webui-<os>-<arch>[.exe]                   WebUI server (6 builds)
+#   msst-net-controller-desktop-linux-<arch>.deb/.rpm/.tar.gz
+#   msst-net-controller-desktop-windows-x86_64.msi
+#   msst-net-controller-desktop-macos-<arch>.dmg
+#   msst-net-controller-android-<aarch64|armv7|x86_64>.apk   (outside the contract:
+#                                                     Android doesn't use the installer)
+#   manifest.json + manifest.json.sig                 signed with this repository's key
+#   abjust/msstnet31x-webui:<version>                 image (amd64, arm64), pinned in the manifest
+#
+# A `v<version>` tag publishes: Docker Hub image, GitHub Release, Gitee
+# copy.  Run by hand (workflow_dispatch) it only builds and keeps the files
+# as workflow artifacts.
+#
+# Settings:
+#   secrets  MSST_RELEASE_SIGNING_KEY   Controller release key (msst-net-installer release keygen)
+#            DOCKERHUB_USERNAME, DOCKERHUB_TOKEN
+#            GITEE_TOKEN
+#            KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
+#                                 the Android signing key (as in 3.0.x: same app ID, so
+#                                 the same key, or installed apps can't be upgraded)
+#   vars     MSST_CONTROLLER_RELEASE_PUBKEYS   its public key(s), comma-separated, to verify with
+#            MSST_CORE_REF        Core branch/tag/commit to build against (default: Core's
+#                                 newest release, prereleases included; without one,
+#                                 its default branch)
+#            MSST_INSTALLER_REF   installer branch/tag providing `release manifest|sign|verify`
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CORE_REPO: MSST-Net-Developers/msst-net-core-31x
+  INSTALLER_REPO: MSST-Net-Developers/msst-net-installer-31x
+  IMAGE: abjust/msstnet31x-webui
+  # Lowest Core release this Controller works with (manifest `min_core`).
+  MIN_CORE: 3.1.0
+  PUBLISH: ${{ startsWith(github.ref, 'refs/tags/v') }}
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+      ipc_protocol: ${{ steps.v.outputs.ipc_protocol }}
+      # Every job builds against this one Core commit.
+      core_sha: ${{ steps.v.outputs.core_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: msst-net-controller-31x
+      - id: core
+        name: Core to build against
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CORE_REF: ${{ vars.MSST_CORE_REF }}
+        run: |
+          ref="$CORE_REF"
+          if [[ -z "$ref" ]]; then
+            ref=$(gh release list -R "$CORE_REPO" --limit 1 --json tagName --jq '.[0].tagName // empty')
+          fi
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.CORE_REPO }}
+          ref: ${{ steps.core.outputs.ref }}
+          path: msst-net-core-31x
+      - id: v
+        name: Version (tag = crate = app)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd msst-net-controller-31x
+          crate=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          jni=$(sed -n 's/^version = "\(.*\)"/\1/p' compose/rust/Cargo.toml | head -1)
+          app=$(sed -n 's/^msstVersionName=//p' compose/gradle.properties)
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then v="${GITHUB_REF_NAME#v}"; else v="$crate"; fi
+          for x in "Cargo.toml:$crate" "compose/rust/Cargo.toml:$jni" "compose/gradle.properties:$app"; do
+            [[ "${x#*:}" == "$v" ]] || { echo "::error::${x%%:*} has version ${x#*:}, expected $v"; exit 1; }
+          done
+          # The installer only accepts 3.1.x releases.
+          [[ "$v" == 3.1.* ]] || { echo "::error::version $v is not 3.1.x"; exit 1; }
+          # IPC protocol of the Core checkout (version.rs: make_version(major, minor, patch)).
+          ipc=$(sed -n 's/.*PROTOCOL_VERSION: u32 = make_version(\([0-9]*\), *\([0-9]*\), *[0-9]*);.*/\1.\2/p' \
+            ../msst-net-core-31x/crates/msst-ipc-protocol/src/version.rs)
+          [[ -n "$ipc" ]] || { echo "::error::PROTOCOL_VERSION not found in Core's protocol crate"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$([[ "$v" == *-* ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "ipc_protocol=$ipc" >> "$GITHUB_OUTPUT"
+          core=$(git -C ../msst-net-core-31x rev-parse HEAD)
+          echo "core_sha=$core" >> "$GITHUB_OUTPUT"
+          echo "Controller $v, IPC protocol $ipc, Core ${{ steps.core.outputs.ref || 'default branch' }} ($core)" >> "$GITHUB_STEP_SUMMARY"
+
+  test:
+    needs: [version]
+    uses: ./.github/workflows/ci.yml
+    with:
+      core_ref: ${{ needs.version.outputs.core_sha }}
+
+  # The wasm frontend is the same on every platform: built once, embedded
+  # into each msst-net-webui build.
+  web-frontend:
+    needs: [version]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: msst-net-controller-31x
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.CORE_REPO }}
+          ref: ${{ needs.version.outputs.core_sha }}
+          path: msst-net-core-31x
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build
+        working-directory: msst-net-controller-31x/compose
+        run: ./gradlew --no-daemon :webApp:wasmJsBrowserDistribution
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-frontend
+          path: msst-net-controller-31x/compose/webApp/build/dist/wasmJs/productionExecutable
+          if-no-files-found: error
+
+  webui:
+    name: WebUI (${{ matrix.os }}-${{ matrix.arch }})
+    needs: [version, web-frontend]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux: static (musl), runs on any distribution and in the image.
+          # native: the runner can run the result (self-test).
+          - { os: linux,   arch: x86_64,  runner: ubuntu-latest,     target: x86_64-unknown-linux-musl,  native: true }
+          - { os: linux,   arch: aarch64, runner: ubuntu-24.04-arm,  target: aarch64-unknown-linux-musl, native: true }
+          - { os: windows, arch: x86_64,  runner: windows-latest,    target: x86_64-pc-windows-msvc,  ext: .exe, native: true }
+          - { os: windows, arch: aarch64, runner: windows-latest,    target: aarch64-pc-windows-msvc, ext: .exe }
+          - { os: macos,   arch: x86_64,  runner: macos-latest,      target: x86_64-apple-darwin }
+          - { os: macos,   arch: aarch64, runner: macos-latest,      target: aarch64-apple-darwin,       native: true }
+    defaults:
+      run:
+        shell: bash
+        working-directory: msst-net-controller-31x
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: msst-net-controller-31x
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.CORE_REPO }}
+          ref: ${{ needs.version.outputs.core_sha }}
+          path: msst-net-core-31x
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-frontend
+          path: msst-net-controller-31x/compose/webApp/build/dist/wasmJs/productionExecutable
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: msst-net-controller-31x
+          key: ${{ matrix.target }}
+      - name: musl toolchain
+        if: matrix.os == 'linux'
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends musl-tools
+          t=${{ matrix.target }}
+          echo "CC_${t//-/_}=musl-gcc" >> "$GITHUB_ENV"
+      - name: Build
+        run: cargo build --release --locked --features webui --bin msst-net-webui --target ${{ matrix.target }}
+      - name: Name per contract
+        run: |
+          mkdir -p ../dist
+          cp "target/${{ matrix.target }}/release/msst-net-webui${{ matrix.ext }}" \
+             "../dist/msst-net-webui-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}"
+      - name: Self-test (--version)
+        if: matrix.native
+        run: |
+          out=$("../dist/msst-net-webui-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}" --version)
+          echo "$out"
+          [[ "$out" == *"${{ needs.version.outputs.version }}"* ]]
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-webui-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  desktop:
+    name: Desktop (${{ matrix.os }}-${{ matrix.arch }})
+    needs: [version]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # jpackage packages for the machine it runs on: one runner per target.
+        include:
+          - { os: linux,   arch: x86_64,  runner: ubuntu-latest,    tasks: ':desktopApp:packageReleaseDeb :desktopApp:packageReleaseRpm :desktopApp:createReleaseDistributable' }
+          - { os: linux,   arch: aarch64, runner: ubuntu-24.04-arm, tasks: ':desktopApp:packageReleaseDeb :desktopApp:packageReleaseRpm :desktopApp:createReleaseDistributable' }
+          - { os: windows, arch: x86_64,  runner: windows-latest,   tasks: ':desktopApp:packageReleaseMsi' }
+          - { os: macos,   arch: x86_64,  runner: macos-15-intel,   tasks: ':desktopApp:packageReleaseDmg' }
+          - { os: macos,   arch: aarch64, runner: macos-latest,     tasks: ':desktopApp:packageReleaseDmg' }
+    defaults:
+      run:
+        shell: bash
+        working-directory: msst-net-controller-31x
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: msst-net-controller-31x
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.CORE_REPO }}
+          ref: ${{ needs.version.outputs.core_sha }}
+          path: msst-net-core-31x
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: msst-net-controller-31x/compose/rust
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      # Gradle configures the Android modules too, which needs an SDK; the
+      # ARM runners don't come with one.
+      - uses: android-actions/setup-android@v3
+      - name: rpmbuild
+        if: matrix.os == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends rpm fakeroot
+      - name: JNI library
+        run: bash compose/rust/build-desktop.sh
+      - name: Package
+        working-directory: msst-net-controller-31x/compose
+        run: ./gradlew --no-daemon ${{ matrix.tasks }}
+      - name: Name per contract
+        run: |
+          set -euo pipefail
+          out=compose/desktopApp/build/compose/binaries/main-release
+          name=msst-net-controller-desktop-${{ matrix.os }}-${{ matrix.arch }}
+          mkdir -p ../dist
+          one() { local f=( $1 ); [[ ${#f[@]} == 1 && -f "${f[0]}" ]] || { echo "::error::expected one $1"; exit 1; }; cp "${f[0]}" "../dist/$name$2"; }
+          case ${{ matrix.os }} in
+            linux)
+              one "$out/deb/*.deb" .deb
+              one "$out/rpm/*.rpm" .rpm
+              tar -C "$out/app" -czf "../dist/$name.tar.gz" msst-net-controller ;;
+            windows) one "$out/msi/*.msi" .msi ;;
+            macos)   one "$out/dmg/*.dmg" .dmg ;;
+          esac
+          ls -l ../dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-desktop-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  android:
+    name: Android APKs
+    needs: [version]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: msst-net-controller-31x
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: msst-net-controller-31x
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.CORE_REPO }}
+          ref: ${{ needs.version.outputs.core_sha }}
+          path: msst-net-core-31x
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: msst-net-controller-31x/compose/rust
+          key: android
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: android-actions/setup-android@v3
+      - name: cargo-ndk
+        run: cargo install cargo-ndk --locked
+      # libmsst_jni.so with the embedded Core, per ABI, into jniLibs/.
+      - name: JNI library
+        run: ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME" bash compose/rust/build-android.sh
+      # A release must be signed with the app's key; a manual run without the
+      # secrets builds unsigned APKs (for testing the build only).
+      - name: Signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [[ -n "$KEYSTORE_BASE64" ]]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/keystore.jks"
+            echo "KEYSTORE_FILE=$RUNNER_TEMP/keystore.jks" >> "$GITHUB_ENV"
+          elif [[ "$PUBLISH" == true ]]; then
+            echo "::error::set the KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS and KEY_PASSWORD secrets"; exit 1
+          else
+            echo "::warning::no signing key: the APKs are unsigned"
+          fi
+      - name: Build
+        working-directory: msst-net-controller-31x/compose
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew --no-daemon :androidApp:assembleRelease
+      - name: Name like the other files
+        run: |
+          set -euo pipefail
+          out=compose/androidApp/build/outputs/apk/release
+          mkdir -p ../dist
+          for abi in arm64-v8a:aarch64 armeabi-v7a:armv7 x86_64:x86_64; do
+            f=( $out/androidApp-${abi%%:*}-release*.apk )
+            [[ ${#f[@]} == 1 && -f "${f[0]}" ]] || { echo "::error::no APK for ${abi%%:*}"; exit 1; }
+            cp "${f[0]}" "../dist/msst-net-controller-android-${abi#*:}.apk"
+          done
+          ls -l ../dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-android
+          path: dist/*
+          if-no-files-found: error
+
+  image:
+    name: Docker image
+    needs: [version, test, webui]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-webui-linux-*
+          merge-multiple: true
+          path: dist
+      - name: Context (bin/<docker arch>/msst-net-webui)
+        run: |
+          mkdir -p ctx/bin/amd64 ctx/bin/arm64
+          cp dist/msst-net-webui-linux-x86_64 ctx/bin/amd64/msst-net-webui
+          cp dist/msst-net-webui-linux-aarch64 ctx/bin/arm64/msst-net-webui
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: ctx
+          file: docker/webui/Dockerfile.release
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ needs.version.outputs.version }}
+            ${{ needs.version.outputs.prerelease == 'false' && format('{0}:latest', env.IMAGE) || '' }}
+
+  release:
+    name: Manifest and release
+    needs: [version, test, webui, desktop, android, image]
+    # Without a tag: the image job is skipped, and so is publishing.
+    if: >-
+      always() && needs.version.result == 'success' && needs.test.result == 'success'
+      && needs.webui.result == 'success' && needs.desktop.result == 'success'
+      && needs.android.result == 'success'
+      && (needs.image.result == 'success' || needs.image.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          merge-multiple: true
+          path: dist
+      # The release tool is the installer itself, so the manifest is written
+      # by the same code that reads it.
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.INSTALLER_REPO }}
+          ref: ${{ vars.MSST_INSTALLER_REF }}
+          path: installer
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: installer
+      - name: Release tool
+        working-directory: installer
+        run: cargo build --locked --release && cp target/release/msst-net-installer "$RUNNER_TEMP/"
+      - name: Manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(--product controller --dir dist --version "$VERSION"
+                --ipc-protocol "${{ needs.version.outputs.ipc_protocol }}" --min-core "$MIN_CORE")
+          if [[ -n "${{ needs.image.outputs.digest }}" ]]; then
+            args+=(--image "$IMAGE:$VERSION@${{ needs.image.outputs.digest }}")
+          fi
+          "$RUNNER_TEMP/msst-net-installer" release manifest "${args[@]}"
+          cat dist/manifest.json
+      - name: Sign and verify
+        if: env.PUBLISH == 'true'
+        shell: bash
+        env:
+          MSST_RELEASE_SIGNING_KEY: ${{ secrets.MSST_RELEASE_SIGNING_KEY }}
+          PUBKEYS: ${{ vars.MSST_CONTROLLER_RELEASE_PUBKEYS }}
+        run: |
+          set -euo pipefail
+          [[ -n "$MSST_RELEASE_SIGNING_KEY" && -n "$PUBKEYS" ]] \
+            || { echo "::error::set secret MSST_RELEASE_SIGNING_KEY and variable MSST_CONTROLLER_RELEASE_PUBKEYS"; exit 1; }
+          "$RUNNER_TEMP/msst-net-installer" release sign --dir dist
+          keys=(); IFS=, read -ra list <<< "$PUBKEYS"
+          for k in "${list[@]}"; do keys+=(--pubkey "$(echo "$k" | xargs)"); done
+          "$RUNNER_TEMP/msst-net-installer" release verify --product controller --dir dist "${keys[@]}"
+      - uses: actions/upload-artifact@v4
+        if: env.PUBLISH != 'true'
+        with:
+          name: release-${{ env.VERSION }}
+          path: dist/*
+      - uses: softprops/action-gh-release@v2
+        if: env.PUBLISH == 'true'
+        with:
+          name: MSST-Net Controller ${{ env.VERSION }}
+          prerelease: ${{ needs.version.outputs.prerelease == 'true' }}
+          files: dist/*
+          fail_on_unmatched_files: true
+
+  sync-gitee:
+    name: Sync GitHub Release to Gitee
+    needs: [release]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: trustedinster/sync-release-gitee@v1.3
+        with:
+          gitee_owner: Abjust
+          gitee_repo: msst-net-controller-31x
+          gitee_token: ${{ secrets.GITEE_TOKEN }}
+          github_owner: MSST-Net-Developers
+          github_repo: msst-net-controller-31x
+          gitee_upload_retry_times: 3

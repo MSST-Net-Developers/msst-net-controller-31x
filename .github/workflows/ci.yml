@@ -1,0 +1,63 @@
+name: CI
+
+# Tests on every branch push and pull request; the release workflow runs
+# the same job (workflow_call) before building anything.
+#
+# The Controller crate and the JNI crate depend on Core's repository by
+# path (../msst-net-core-31x: the IPC protocol crate, and Core itself for
+# Android), so it is checked out next to this one: the release's Core when
+# called from release.yml, else repository variable MSST_CORE_REF, else
+# Core's default branch (its latest code).
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_call:
+    inputs:
+      core_ref:
+        description: Core commit to test against
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: msst-net-controller-31x
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: msst-net-controller-31x
+      - uses: actions/checkout@v4
+        with:
+          repository: MSST-Net-Developers/msst-net-core-31x
+          ref: ${{ inputs.core_ref || vars.MSST_CORE_REF }}
+          path: msst-net-core-31x
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            msst-net-controller-31x
+            msst-net-controller-31x/compose/rust
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Controller library and WebUI server
+        run: cargo test --locked --features webui
+      - name: JNI bridge
+        working-directory: msst-net-controller-31x/compose/rust
+        run: cargo test --locked
+      - name: Kotlin presentation logic
+        working-directory: msst-net-controller-31x/compose
+        run: ./gradlew --no-daemon :shared:jvmTest
