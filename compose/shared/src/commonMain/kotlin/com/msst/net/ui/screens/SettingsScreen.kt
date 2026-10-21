@@ -80,7 +80,6 @@ import com.msst.net.ui.components.Tag
 import com.msst.net.ui.components.TextInput
 import com.msst.net.ui.components.ToggleRow
 import com.msst.net.ui.dialogs.AppExclusionDialog
-import com.msst.net.ui.dialogs.LicensesDialog
 import com.msst.net.ui.dialogs.LogDialog
 import com.msst.net.ui.theme.Msst
 import kotlinx.coroutines.delay
@@ -102,30 +101,8 @@ fun SettingsScreen() {
             ctx.platform.appExclusion?.let { AppExclusionCard(it) }
             ctx.platform.session?.let { RemoteAccessCard(it) }
             DiagnosticsCard()
-            AboutCard()
         }
     }
-}
-
-// ── About ────────────────────────────────────────────────────────────────────
-
-@Composable
-private fun AboutCard() {
-    var open by remember { mutableStateOf(false) }
-    Card {
-        SectionHeader("关于")
-        Divider()
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "MSST-Net 控制器以 MIT 许可证发布，并使用了第三方开源软件",
-                Modifier.weight(1f),
-                style = MaterialTheme.typography.bodyMedium,
-                color = Msst.colors.textSecondary,
-            )
-            SecondaryButton("开源许可", { open = true }, icon = MdiIcons.BookOpenOutline)
-        }
-    }
-    if (open) LicensesDialog { open = false }
 }
 
 // ── Identity ─────────────────────────────────────────────────────────────────

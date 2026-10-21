@@ -16,6 +16,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
@@ -28,6 +31,8 @@ import com.msst.net.ui.components.InlineNote
 import com.msst.net.ui.components.LinkButton
 import com.msst.net.ui.components.Logo
 import com.msst.net.ui.components.Pill
+import com.msst.net.ui.components.SecondaryButton
+import com.msst.net.ui.dialogs.LicensesDialog
 import com.msst.net.ui.theme.Msst
 
 @Composable
@@ -63,5 +68,23 @@ fun AboutScreen() {
             LinkButton("官方网站（含使用说明）", { ctx.services.openUrl(WEBSITE) }, MdiIcons.Web)
             LinkButton("GitHub", { ctx.services.openUrl("https://github.com/MSST-Net-Developers") }, MdiIcons.Github)
         }
+        LicensesCard(Modifier.widthIn(max = 420.dp).fillMaxWidth())
     }
+}
+
+@Composable
+private fun LicensesCard(modifier: Modifier) {
+    var open by remember { mutableStateOf(false) }
+    Card(modifier) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "MSST-Net 控制器以 MIT 许可证发布，并使用了第三方开源软件",
+                Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+                color = Msst.colors.textSecondary,
+            )
+            SecondaryButton("开源许可", { open = true }, icon = MdiIcons.BookOpenOutline)
+        }
+    }
+    if (open) LicensesDialog { open = false }
 }
