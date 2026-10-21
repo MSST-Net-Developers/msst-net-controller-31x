@@ -1387,7 +1387,7 @@ dependencies = [
 
 [[package]]
 name = "msst-jni"
-version = "3.1.0"
+version = "3.1.1"
 dependencies = [
  "jni",
  "ksni",
@@ -1402,7 +1402,7 @@ dependencies = [
 
 [[package]]
 name = "msst-net-controller"
-version = "3.1.0"
+version = "3.1.1"
 dependencies = [
  "clap",
  "msst-ipc-protocol",
