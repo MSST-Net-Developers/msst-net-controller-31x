@@ -251,6 +251,14 @@ jobs:
       - name: Package
         working-directory: msst-net-controller-31x/compose
         run: ./gradlew --no-daemon ${{ matrix.tasks }}
+      # Gradle only names jpackage's logs; show them.
+      - name: jpackage logs
+        if: failure()
+        run: |
+          for f in compose/desktopApp/build/compose/logs/*/*.txt; do
+            [[ -f $f ]] || continue
+            echo "::group::$f"; cat "$f"; echo "::endgroup::"
+          done
       - name: Name per contract
         run: |
           set -euo pipefail

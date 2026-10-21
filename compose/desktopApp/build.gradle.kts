@@ -29,7 +29,9 @@ compose.desktop {
             packageName = "msst-net-controller"
             packageVersion = providers.gradleProperty("msstVersionName").get().substringBefore('-')
             description = "MSST-Net Controller"
-            vendor = "MSST-Net 开发组"
+            // ASCII only: WiX writes the MSI with code page 1252, so Chinese
+            // text here fails packageMsi.
+            vendor = "MSST-Net Developers"
             appResourcesRootDir.set(layout.projectDirectory.dir("appResources"))
             // Beyond what jlink derives: sun.misc.Unsafe (jdk.unsupported) and
             // java.lang.instrument, as `suggestRuntimeModules` reports.
