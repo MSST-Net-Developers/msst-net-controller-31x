@@ -49,7 +49,7 @@ Core and the WebUI Controller run as two containers on a Linux host
 ```sh
 (cd compose && ./gradlew :webApp:wasmJsBrowserDistribution)   # web frontend first
 docker buildx build -f docker/webui/Dockerfile \
-    --build-context core=../msst-net-core-31x -t msstnet/webui .
+    --build-context core=../msst-net-core-31x -t abjust/msstnet31x-webui .
 ```
 
 The frontend is built outside Docker because the Gradle build configures the
@@ -60,7 +60,7 @@ runtime.
 ## Core container
 
 Built from Core's repository (`Dockerfile` there:
-`docker buildx build -t msstnet/core .` in `msst-net-core-31x`).
+`docker buildx build -t abjust/msstnet31x-core .` in `msst-net-core-31x`).
 
 - `NET_ADMIN`, `/dev/net/tun`, host networking (as in 3.0.x);
 - the image has `iproute2` and `iptables` (Core runs `ip`, and without

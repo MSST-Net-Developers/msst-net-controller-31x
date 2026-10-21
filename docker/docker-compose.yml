@@ -7,7 +7,7 @@
 
 services:
   msst-net-core:
-    image: msstnet/core:latest
+    image: abjust/msstnet31x-core:latest
     container_name: msst-net-core
     restart: unless-stopped
     network_mode: host
@@ -25,7 +25,7 @@ services:
       - ./run:/run/msst
 
   msst-net-ctrl-webui:
-    image: msstnet/webui:latest
+    image: abjust/msstnet31x-webui:latest
     container_name: msst-net-ctrl-webui
     restart: unless-stopped
     depends_on:

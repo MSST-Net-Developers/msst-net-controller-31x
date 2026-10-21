@@ -8,7 +8,7 @@
 #
 #   (cd compose && ./gradlew :webApp:wasmJsBrowserDistribution)
 #   docker buildx build -f docker/webui/Dockerfile \
-#       --build-context core=../msst-net-core-31x -t msstnet/webui .
+#       --build-context core=../msst-net-core-31x -t abjust/msstnet31x-webui .
 #
 # See docs/DOCKER.md for running it next to the Core container.
 
