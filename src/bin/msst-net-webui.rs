@@ -9,7 +9,8 @@
 //! `msst-net-webui healthcheck` checks a running WebUI on this host (exit
 //! status 0 when it answers), for container health checks.
 //! `msst-net-webui --version` prints the version (installers use it to
-//! check a download before switching to it).
+//! check a download before switching to it); `--licenses` prints the
+//! third-party notices.
 //!
 //! Windows: started by the Service Control Manager (service
 //! `msst-net-webui`, LocalSystem — Core's pipe admits only SYSTEM,
@@ -98,12 +99,24 @@ fn main() {
             println!("msst-net-webui {}", env!("CARGO_PKG_VERSION"));
             return;
         }
+        Some("--licenses") => match msst_net_controller::webui::third_party_notices() {
+            Some(text) => {
+                use std::io::Write;
+                let _ = std::io::stdout().write_all(&text);
+                return;
+            }
+            None => {
+                eprintln!("错误: 此构建未包含前端，也就没有许可声明");
+                std::process::exit(1);
+            }
+        },
         Some("--help" | "-h") => {
             println!(
                 "msst-net-webui {} — MSST-Net WebUI\n\n\
                  用法：\n  msst-net-webui               启动 WebUI\n  \
                  msst-net-webui healthcheck   检查本机运行中的 WebUI\n  \
-                 msst-net-webui --version     显示版本\n\n\
+                 msst-net-webui --version     显示版本\n  \
+                 msst-net-webui --licenses    显示第三方许可声明\n\n\
                  配置通过环境变量提供，见 docs/DOCKER.md。",
                 env!("CARGO_PKG_VERSION")
             );

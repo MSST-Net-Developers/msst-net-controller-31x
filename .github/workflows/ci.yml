@@ -53,6 +53,10 @@ jobs:
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v4
 
+      - name: Third-party notices up to date
+        run: |
+          command -v cargo-about >/dev/null || cargo install cargo-about --locked --version 0.9.2
+          python3 scripts/third-party-licenses.py --check
       - name: Controller library and WebUI server
         run: cargo test --locked --features webui
       - name: JNI bridge

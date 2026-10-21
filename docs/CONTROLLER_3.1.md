@@ -72,7 +72,17 @@ installer's deployment contract defines (`msst-net-installer-31x`
 per-ABI Android APKs (not in the manifest: Android doesn't use the
 installer).  It builds against Core's newest release unless
 `MSST_CORE_REF` names another.  Its header lists the secrets and variables
-it needs.  UI font: 寒蝉全圆体 (ChillRound, SIL OFL 1.1), bundled as Compose
+it needs.
+
+Third-party notices: `scripts/third-party-licenses.py` writes
+`compose/shared/src/commonMain/composeResources/files/THIRD_PARTY_LICENSES.txt`
+(Rust crates via cargo-about 0.9.2 and `about.toml`, Maven modules via the
+`thirdPartyModules` Gradle task, npm packages from `licenses/npm/`, fonts and
+icons).  Every app shows it under 设置 → 关于 → 开源许可,
+`msst-net-webui --licenses` prints it, the WebUI image has it in
+`/usr/share/doc/msst-net-webui/`, and each release carries it as a file.  CI
+fails when it is out of date: rerun the script after changing dependencies.
+UI font: 寒蝉全圆体 (ChillRound, SIL OFL 1.1), bundled as Compose
 resources.
 
 ### WebUI

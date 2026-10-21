@@ -31,6 +31,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 
 FROM debian:bookworm-slim
 COPY --from=build /usr/local/bin/msst-net-webui /usr/local/bin/msst-net-webui
+COPY --from=build /src/msst-net-controller-31x/compose/webApp/build/dist/wasmJs/productionExecutable/composeResources/com.msst.net.resources/files/THIRD_PARTY_LICENSES.txt /usr/share/doc/msst-net-webui/
 # Password, config.toml and the self-signed certificate: mount a volume.
 ENV MSST_WEBUI_CONFIG_DIR=/var/lib/msst-webui
 VOLUME ["/var/lib/msst-webui"]

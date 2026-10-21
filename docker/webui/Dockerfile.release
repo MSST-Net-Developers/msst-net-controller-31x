@@ -2,13 +2,14 @@
 #
 # Release image from the static (musl) msst-net-webui binaries the release
 # workflow already built: no compiling per platform under emulation.  The
-# context holds bin/<TARGETARCH>/msst-net-webui (amd64, arm64); see
-# .github/workflows/release.yml.  Keep the runtime part in step with
-# Dockerfile (the from-source build).
+# context holds bin/<TARGETARCH>/msst-net-webui (amd64, arm64) and
+# THIRD_PARTY_LICENSES.txt; see .github/workflows/release.yml.  Keep the
+# runtime part in step with Dockerfile (the from-source build).
 
 FROM debian:bookworm-slim
 ARG TARGETARCH
 COPY --chmod=755 bin/${TARGETARCH}/msst-net-webui /usr/local/bin/msst-net-webui
+COPY THIRD_PARTY_LICENSES.txt /usr/share/doc/msst-net-webui/
 # Password, config.toml and the self-signed certificate: mount a volume.
 ENV MSST_WEBUI_CONFIG_DIR=/var/lib/msst-webui
 VOLUME ["/var/lib/msst-webui"]

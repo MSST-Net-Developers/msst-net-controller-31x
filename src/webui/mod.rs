@@ -313,6 +313,12 @@ async fn forward_notices(mut socket: WebSocket, client: IpcClient) {
 #[exclude = "*.map"] // source maps: debugging only
 struct Frontend;
 
+/// The third-party notices the frontend bundles (`--licenses`), if it was
+/// built into this binary.
+pub fn third_party_notices() -> Option<Vec<u8>> {
+    Frontend::get("composeResources/com.msst.net.resources/files/THIRD_PARTY_LICENSES.txt").map(|f| f.data.into_owned())
+}
+
 async fn static_handler(req: Request) -> Response {
     let path = req.uri().path().trim_start_matches('/');
     let (path, data) = match Frontend::get(path) {
