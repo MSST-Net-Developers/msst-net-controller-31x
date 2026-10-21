@@ -57,15 +57,17 @@ Android modules too (it needs the Android SDK).  The Rust build runs in
 `rust:1.90-bookworm`, so the binary matches the `debian:bookworm-slim`
 runtime.
 
-## Core container (Core repository)
+## Core container
 
-Not part of this repository; what the compose file expects of it:
+Built from Core's repository (`Dockerfile` there:
+`docker buildx build -t msstnet/core .` in `msst-net-core-31x`).
 
 - `NET_ADMIN`, `/dev/net/tun`, host networking (as in 3.0.x);
-- the image needs `iproute2`, and `iptables` for the DNS fallback (Core runs
-  `ip`, `iptables`, `resolvectl`);
-- **data location:** with `CORE_MODE=container` Core uses `/var/lib/msst`
-  only when it already holds a 3.0.x `identity.json`; a new installation
-  keeps its identity in `/root/.local/share/msst-net` and its config in
-  `/root/.config/msst-net`, which the compose file mounts until Core uses
-  `/var/lib/msst` for new installations in container mode too.
+- the image has `iproute2` and `iptables` (Core runs `ip`, and without
+  systemd-resolved redirects DNS with `iptables`);
+- `CORE_MODE=container` (set by the image) keeps `core.toml` and the data
+  directory (identity, caches) in the `/var/lib/msst` volume, so a
+  re-created container keeps its device identity; a 3.0.x volume is used
+  as is.  A 3.1 container started before that change kept its files under
+  `/root`; Core keeps using them while they exist there and the volume has
+  none.

@@ -20,12 +20,9 @@ services:
       # Core 3.1 listens on ipc.sock in this path's directory (/run/msst).
       CORE_SOCKET_PATH: /run/msst/core.sock
     volumes:
+      # Identity, core.toml and caches (Core's CORE_MODE=container default).
       - ./data:/var/lib/msst
       - ./run:/run/msst
-      # Until Core keeps a new installation's identity and config under
-      # /var/lib/msst in container mode, persist its default locations.
-      - ./core/data:/root/.local/share/msst-net
-      - ./core/config:/root/.config/msst-net
 
   msst-net-ctrl-webui:
     image: msstnet/webui:latest
