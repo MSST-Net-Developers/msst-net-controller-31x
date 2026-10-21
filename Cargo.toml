@@ -23,7 +23,7 @@ required-features = ["webui"]
 
 [features]
 default = []
-webui = ["dep:axum", "dep:axum-server", "dep:rustls", "dep:rcgen", "dep:argon2", "dep:rand", "dep:ipnetwork", "dep:toml", "dep:rpassword", "dep:rust-embed", "dep:mime_guess", "dep:tower-http"]
+webui = ["dep:axum", "dep:axum-server", "dep:rustls", "dep:rcgen", "dep:argon2", "dep:rand", "dep:ipnetwork", "dep:toml", "dep:rpassword", "dep:rust-embed", "dep:mime_guess", "dep:tower-http", "dep:windows-service"]
 
 [dependencies]
 # ── IPC protocol (shared with Core) ──────────────────────────────────────────
@@ -67,6 +67,8 @@ tokio = { version = "1", features = ["full", "net"] }
 
 [target.'cfg(windows)'.dependencies]
 tokio = { version = "1", features = ["full", "net"] }
+# msst-net-webui as a Windows service (same crate and version as Core).
+windows-service = { version = "0.6", optional = true }
 
 [dev-dependencies]
 tower = "0.5"

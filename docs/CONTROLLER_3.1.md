@@ -77,8 +77,19 @@ failed logins are delayed, MSST-Net's virtual network is refused unless an
 allowlist entry inside it admits it, the self-signed certificate is kept
 (or `TLS_CERT_FILE` / `TLS_KEY_FILE` supply one), `MSST_WEBUI_CONFIG_DIR`
 moves the config directory, SIGTERM stops it gracefully, and `GET /healthz`
-/ `msst-net-webui healthcheck` serve container health checks.  Docker
+/ `msst-net-webui healthcheck` serve container health checks, `--version`
+prints the version (unknown arguments are refused instead of starting the
+server).  Docker
 deployment: [DOCKER.md](DOCKER.md).
+
+On Windows the same binary runs as the service `msst-net-webui` when the
+Service Control Manager starts it (otherwise in the console): LocalSystem
+(Core's pipe admits only SYSTEM, Administrators and interactive users, so a
+virtual service account would be refused), config in
+`%ProgramData%\MSST-Net\webui` unless `MSST_WEBUI_CONFIG_DIR` is set (the
+service's `Environment` registry value), log in `webui.log` there (rotated at
+5 MB).  The installer registers the service and restricts that directory to
+SYSTEM and Administrators.
 
 ### Android
 
