@@ -1,5 +1,6 @@
 //! WebUI configuration (`config.toml`), compatible with 3.0.x files.
 
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 
 use ipnetwork::IpNetwork;
@@ -65,11 +66,41 @@ impl Config {
     pub fn parsed_cidrs(&self) -> Vec<IpNetwork> {
         self.allowed_cidrs.iter().filter_map(|s| s.parse().ok()).collect()
     }
+
+    /// Whether a client address may reach the WebUI.  Addresses in
+    /// MSST-Net's own virtual network ([`VIRTUAL_NETS`]) are refused even
+    /// when a broader entry covers them (the default `172.16.0.0/12` and
+    /// `fc00::/7` do): only an entry inside the virtual network admits them.
+    pub fn allows(&self, ip: IpAddr) -> bool {
+        // A dual-stack listener reports IPv4 clients as `::ffff:a.b.c.d`.
+        let ip = ip.to_canonical();
+        let nets = self.parsed_cidrs();
+        match virtual_nets().into_iter().find(|v| v.contains(ip)) {
+            Some(v) => nets.iter().any(|n| n.contains(ip) && within(n, &v)),
+            None => nets.iter().any(|n| n.contains(ip)),
+        }
+    }
 }
 
+/// MSST-Net's virtual network (Core's `ip::IPV4_NET` / `IPV6_NET`).
+pub const VIRTUAL_NETS: [&str; 2] = ["172.22.0.0/16", "fd22:2222:2222:2222::/64"];
+
+fn virtual_nets() -> Vec<IpNetwork> {
+    VIRTUAL_NETS.iter().map(|s| s.parse().expect("valid CIDR")).collect()
+}
+
+/// `inner` lies entirely within `outer`.
+fn within(inner: &IpNetwork, outer: &IpNetwork) -> bool {
+    inner.prefix() >= outer.prefix() && outer.contains(inner.network())
+}
+
+/// `MSST_WEBUI_CONFIG_DIR` (containers: a volume), else
 /// `~/.config/msst-net-webui` (`%APPDATA%\msst-net-webui` on Windows) —
 /// the 3.0.x location, so existing passwords and configs are reused.
 pub fn config_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os("MSST_WEBUI_CONFIG_DIR").filter(|d| !d.is_empty()) {
+        return PathBuf::from(dir);
+    }
     #[cfg(windows)]
     let base = std::env::var("APPDATA").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("."));
     #[cfg(not(windows))]
@@ -90,5 +121,24 @@ mod tests {
         assert_eq!(cfg.port, 18081);
         assert_eq!(cfg.parsed_cidrs().len(), 1);
         assert!(toml::to_string(&cfg).unwrap().contains("core_url"));
+    }
+
+    #[test]
+    fn virtual_network_is_refused_unless_listed_explicitly() {
+        let ip = |s: &str| s.parse::<IpAddr>().unwrap();
+        let cfg = Config::default();
+        assert!(cfg.allows(ip("192.168.1.20")));
+        assert!(cfg.allows(ip("172.17.0.1")));
+        assert!(cfg.allows(ip("::ffff:192.168.1.20")), "IPv4-mapped clients of a dual-stack listener");
+        assert!(cfg.allows(ip("fd00::1")));
+        assert!(!cfg.allows(ip("172.22.0.5")), "inside 172.16.0.0/12, but MSST-Net's virtual network");
+        assert!(!cfg.allows(ip("::ffff:172.22.0.5")));
+        assert!(!cfg.allows(ip("fd22:2222:2222:2222::5")), "inside fc00::/7, but the virtual network");
+        assert!(!cfg.allows(ip("8.8.8.8")));
+
+        let cfg = Config { allowed_cidrs: vec!["172.22.0.5/32".into(), "0.0.0.0/0".into()], ..Config::default() };
+        assert!(cfg.allows(ip("172.22.0.5")), "an entry inside the virtual network admits it");
+        assert!(!cfg.allows(ip("172.22.0.6")), "0.0.0.0/0 does not");
+        assert!(cfg.allows(ip("8.8.8.8")));
     }
 }

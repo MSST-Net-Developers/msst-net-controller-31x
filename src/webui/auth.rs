@@ -81,7 +81,8 @@ impl SessionStore {
 
 /// Non-interactive password source for container deployments:
 /// the file at `PASSWORD_FILE` (default `/run/secrets/admin_password`),
-/// then `ADMIN_PASSWORD`.
+/// then `ADMIN_PASSWORD` (empty counts as unset, so a compose file can pass
+/// it through unconditionally).
 pub fn env_password() -> Result<Option<String>, String> {
     let secret_path = std::env::var("PASSWORD_FILE").unwrap_or_else(|_| "/run/secrets/admin_password".into());
     if Path::new(&secret_path).exists() {
@@ -93,7 +94,7 @@ pub fn env_password() -> Result<Option<String>, String> {
         tracing::info!("从密码文件 {secret_path} 读取管理密码");
         return Ok(Some(pw));
     }
-    if let Ok(pw) = std::env::var("ADMIN_PASSWORD") {
+    if let Some(pw) = std::env::var("ADMIN_PASSWORD").ok().filter(|p| !p.is_empty()) {
         if pw.len() < MIN_PASSWORD_LEN {
             return Err("ADMIN_PASSWORD 密码长度不能少于 6 位".into());
         }

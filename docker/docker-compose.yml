@@ -1,0 +1,51 @@
+# MSST-Net 3.1 on Docker: Core and the WebUI Controller as two containers.
+# Follows the installer's 3.0.x layout (./data, ./run), so an upgraded
+# installation keeps its device identity.  See docs/DOCKER.md.
+#
+# Start:  ADMIN_PASSWORD=... docker compose up -d
+# (the password is read on first start only; afterwards ./webui/passwd is used)
+
+services:
+  msst-net-core:
+    image: msstnet/core:latest
+    container_name: msst-net-core
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      CORE_MODE: container
+      # Core 3.1 listens on ipc.sock in this path's directory (/run/msst).
+      CORE_SOCKET_PATH: /run/msst/core.sock
+    volumes:
+      - ./data:/var/lib/msst
+      - ./run:/run/msst
+      # Until Core keeps a new installation's identity and config under
+      # /var/lib/msst in container mode, persist its default locations.
+      - ./core/data:/root/.local/share/msst-net
+      - ./core/config:/root/.config/msst-net
+
+  msst-net-ctrl-webui:
+    image: msstnet/webui:latest
+    container_name: msst-net-ctrl-webui
+    restart: unless-stopped
+    depends_on:
+      - msst-net-core
+    # Host networking: the allowlist sees real client addresses (published
+    # ports can make every client look like the bridge gateway).
+    network_mode: host
+    # Root, like Core: Core gives admin access to root peers.  Rootless
+    # Docker and user-namespace remapping are not supported.
+    user: "0"
+    environment:
+      CORE_SOCKET: /run/msst/core.sock
+      WEBUI_BIND: 0.0.0.0:18080
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      # Optional: your own certificate instead of the self-signed one.
+      # TLS_CERT_FILE: /certs/fullchain.pem
+      # TLS_KEY_FILE: /certs/privkey.pem
+    volumes:
+      - ./run:/run/msst
+      - ./webui:/var/lib/msst-webui

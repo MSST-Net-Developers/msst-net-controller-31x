@@ -254,6 +254,7 @@ private fun RemoteAccessCard(session: WebSession) {
             SecondaryButton("添加", ::add)
         }
         InlineNote("移除当前所用的地址段后，本浏览器将无法再访问 WebUI。")
+        InlineNote("MSST-Net 虚拟网络中的设备默认不能访问，即使上面的地址段包含它们；如需允许，请添加虚拟网络内的地址段（如 172.22.0.0/16）。")
         error?.let { InlineError(it) }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             PrimaryButton(

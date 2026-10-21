@@ -2,16 +2,20 @@
 //! `compose/webApp`) over HTTPS for remote / headless management, with the
 //! 3.0.x security model:
 //!
-//! - every request: source IP must be in `allowed_cidrs` (config.toml)
+//! - every request except `/healthz`: source IP must be in `allowed_cidrs`
+//!   (config.toml); MSST-Net's virtual network only by an explicit entry
+//!   (see [`config::Config::allows`])
 //! - everything except login and static files: valid session cookie
 //!   (`msst_session`, HttpOnly, Secure, SameSite=Lax, 24 h)
 //! - password: argon2 hash in `passwd`, set on first run
-//! - TLS: fresh self-signed certificate per run (see the binary)
+//! - TLS: `TLS_CERT_FILE` / `TLS_KEY_FILE`, else a self-signed certificate
+//!   kept in the config directory (see the binary)
 //!
 //! API (same surface as the Tauri commands):
 //!
 //! | Route | Purpose |
 //! |---|---|
+//! | `GET /healthz` | liveness (container health check; no session, any IP) |
 //! | `POST /api/login`, `POST /api/logout`, `GET /api/session` | session |
 //! | `GET /api/info` | WebUI version and protocol version |
 //! | `GET/PUT /api/config` | allowed CIDRs |
@@ -26,6 +30,7 @@
 
 pub mod auth;
 pub mod config;
+pub mod tls;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -83,10 +88,15 @@ pub fn build_router(state: WebState) -> Router {
         .route("/api/login", post(login))
         .fallback(static_handler.layer(CompressionLayer::new()));
 
-    Router::new()
+    let filtered = Router::new()
         .merge(protected)
         .merge(public)
-        .layer(middleware::from_fn_with_state(state.clone(), ip_filter_middleware))
+        .layer(middleware::from_fn_with_state(state.clone(), ip_filter_middleware));
+
+    // Says only that the server answers: nothing about Core or the device.
+    Router::new()
+        .route("/healthz", get(|| async { "ok" }))
+        .merge(filtered)
         .with_state(state)
 }
 
@@ -98,8 +108,8 @@ async fn ip_filter_middleware(
     req: Request,
     next: Next,
 ) -> Response {
-    let allowed = state.config.read().unwrap().parsed_cidrs();
-    if allowed.iter().any(|net| net.contains(addr.ip())) {
+    let allowed = state.config.read().unwrap().allows(addr.ip());
+    if allowed {
         next.run(req).await
     } else {
         (StatusCode::FORBIDDEN, "Forbidden: your IP is not in the allowed list\n").into_response()

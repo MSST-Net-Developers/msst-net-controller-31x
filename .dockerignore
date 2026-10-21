@@ -1,0 +1,9 @@
+# The WebUI image needs only the Rust sources and the built web frontend
+# (docker/webui/Dockerfile).
+*
+!Cargo.toml
+!Cargo.lock
+!build.rs
+!src
+!compose/webApp/build/dist/wasmJs/productionExecutable
+compose/webApp/build/dist/wasmJs/productionExecutable/*.map

@@ -70,10 +70,15 @@ resources.
 Same as 3.0.x: config in `~/.config/msst-net-webui/` (existing `passwd` and
 `config.toml` are reused), password from `PASSWORD_FILE` /
 `/run/secrets/admin_password` / `ADMIN_PASSWORD` or set interactively on first
-run, self-signed TLS per run, CIDR allowlist on every request, `WEBUI_BIND`
-overrides the listen address.  New: the IPC socket path can be overridden
-with `MSST_IPC_PATH`, cross-site WebSocket connections are rejected, and
-failed logins are delayed.
+run, CIDR allowlist on every request, `WEBUI_BIND` overrides the listen
+address.  New: the IPC socket path can be overridden with `MSST_IPC_PATH`
+(or 3.0.x `CORE_SOCKET`), cross-site WebSocket connections are rejected,
+failed logins are delayed, MSST-Net's virtual network is refused unless an
+allowlist entry inside it admits it, the self-signed certificate is kept
+(or `TLS_CERT_FILE` / `TLS_KEY_FILE` supply one), `MSST_WEBUI_CONFIG_DIR`
+moves the config directory, SIGTERM stops it gracefully, and `GET /healthz`
+/ `msst-net-webui healthcheck` serve container health checks.  Docker
+deployment: [DOCKER.md](DOCKER.md).
 
 ### Android
 

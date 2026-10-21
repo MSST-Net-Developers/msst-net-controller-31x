@@ -35,7 +35,10 @@ pub type IpcStream = Box<dyn AsyncStream>;
 /// Candidate IPC socket/pipe paths, in the order they are tried.
 ///
 /// 1. `MSST_IPC_PATH` env var (explicit override; the only candidate)
-/// 2. Platform defaults, matching where Core binds (Core's
+/// 2. `CORE_SOCKET` env var (3.0.x container deployments): `ipc.sock` in
+///    that path's directory, where Core puts it for its `CORE_SOCKET_PATH`
+///    (the only candidate)
+/// 3. Platform defaults, matching where Core binds (Core's
 ///    `resolve_ipc_socket`: per-user directory when not root, system
 ///    directory when root):
 ///    - Linux: `$XDG_RUNTIME_DIR/msst-net/ipc.sock`, `/run/msst-net/ipc.sock`
@@ -47,6 +50,9 @@ pub type IpcStream = Box<dyn AsyncStream>;
 /// paths are tried by connecting, not by checking that the file exists.
 pub fn ipc_path_candidates() -> Vec<String> {
     if let Ok(p) = std::env::var("MSST_IPC_PATH") {
+        return vec![p];
+    }
+    if let Some(p) = std::env::var("CORE_SOCKET").ok().and_then(|p| legacy_socket_path(&p)) {
         return vec![p];
     }
     #[cfg(target_os = "linux")]
@@ -72,6 +78,13 @@ pub fn ipc_path_candidates() -> Vec<String> {
     {
         vec!["/run/msst-net/ipc.sock".to_string()]
     }
+}
+
+/// `ipc.sock` next to a 3.0.x `CORE_SOCKET` path (Core's
+/// `resolve_ipc_socket` does the same with `CORE_SOCKET_PATH`).
+fn legacy_socket_path(core_socket: &str) -> Option<String> {
+    let dir = std::path::Path::new(core_socket).parent()?;
+    Some(dir.join("ipc.sock").to_string_lossy().into_owned())
 }
 
 /// Connect to Core's IPC endpoint: the first candidate path that accepts
@@ -198,6 +211,11 @@ pub async fn recv_frame<R: AsyncRead + Unpin + ?Sized>(stream: &mut R) -> Result
 mod tests {
     use super::*;
     use msst_ipc_protocol::{IpcEvent, IpcRequest};
+
+    #[test]
+    fn legacy_core_socket_maps_to_ipc_sock() {
+        assert_eq!(legacy_socket_path("/run/msst/core.sock").as_deref(), Some("/run/msst/ipc.sock"));
+    }
 
     #[test]
     fn ipc_path_candidates_non_empty() {
