@@ -5,7 +5,7 @@
 
 The source is the square MSST logo (1024 x 1024, radial-gradient background).
 Writes, under compose/: the in-app logo (Compose resource), the desktop
-installer icons (ICO, ICNS, PNG), the web favicon and the Android launcher
+installer icons (ICO, ICNS, PNG), the tray icon, the web favicon and the Android launcher
 icons.  Needs Pillow (with libimagequant and WebP) and NumPy.
 """
 
@@ -101,6 +101,9 @@ webp(sized(logo, 256), "shared/src/commonMain/composeResources/drawable/msst_log
 png(sized(logo, 512), "desktopApp/icons/msst-net.png")
 write_ico(out("desktopApp/icons/msst-net.ico"), {n: png_bytes(sized(logo, n)) for n in (16, 24, 32, 48, 64, 128, 256)})
 write_icns(out("desktopApp/icons/msst-net.icns"), {n: png_bytes(sized(logo, n)) for n in (16, 32, 64, 128, 256, 512)})
+
+# Tray icon (both the native Linux tray and the JVM tray load it).
+png(sized(logo, 64), "desktopApp/src/main/resources/tray-icon.png")
 
 # Web favicon.
 png(sized(logo, 64), "webApp/src/wasmJsMain/resources/favicon.png")

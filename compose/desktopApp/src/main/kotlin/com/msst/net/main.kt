@@ -18,10 +18,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.FrameWindowScope
-import androidx.compose.ui.window.Tray
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
-import androidx.compose.ui.window.rememberTrayState
 import androidx.compose.ui.window.rememberWindowState
 import com.msst.net.state.ControllerStore
 import com.msst.net.ui.ControllerApp
@@ -33,15 +31,16 @@ import java.awt.Dimension
 import javax.swing.SwingUtilities
 
 fun main() = application {
-    val trayState = rememberTrayState()
+    val tray = remember { AppTray(onQuit = ::exitApplication) }
+    DisposableEffect(tray) {
+        tray.start()
+        onDispose { tray.dispose() }
+    }
     // The library may be missing or built for another platform: say so
     // instead of crashing.
-    val platform = remember { runCatching { DesktopPlatform(trayState) } }
+    val platform = remember { runCatching { DesktopPlatform(tray) } }
     val scope = rememberCoroutineScope()
 
-    Tray(logoPainter(), state = trayState, tooltip = "MSST-Net 控制器") {
-        Item("退出", onClick = ::exitApplication)
-    }
     Window(
         onCloseRequest = ::exitApplication,
         title = "MSST-Net 控制器",
@@ -53,10 +52,9 @@ fun main() = application {
         val chrome = remember(window) { DesktopWindowChrome(this, ::exitApplication) }
         // Narrow enough for the compact layout, which starts below 600 dp.
         LaunchedEffect(window) { window.minimumSize = Dimension(400, 480) }
-        // Clicking an access-request notification shows this window.
+        // The tray icon and access-request notifications show this window.
         DisposableEffect(window) {
-            val p = platform.getOrNull()
-            p?.activateWindow = {
+            tray.showWindow = {
                 SwingUtilities.invokeLater {
                     window.isMinimized = false
                     window.isVisible = true
@@ -64,7 +62,7 @@ fun main() = application {
                     window.requestFocus()
                 }
             }
-            onDispose { p?.activateWindow = {} }
+            onDispose { tray.showWindow = {} }
         }
         Box(Modifier.fillMaxSize()) {
             platform.fold(

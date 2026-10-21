@@ -8,3 +8,7 @@
 # reach the UI.
 -keep interface com.msst.net.jni.NoticeListener { *; }
 -keep class * implements com.msst.net.jni.NoticeListener { *; }
+
+# Called from Rust by name: the tray icon's click and menu callbacks.
+-keep interface com.msst.net.jni.DesktopTray$Listener { *; }
+-keep class * implements com.msst.net.jni.DesktopTray$Listener { *; }

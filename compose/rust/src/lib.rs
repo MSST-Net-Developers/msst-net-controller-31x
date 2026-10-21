@@ -323,6 +323,86 @@ pub extern "system" fn Java_com_msst_net_jni_DesktopNotifications_nativeShow(
     })
 }
 
+// ── Desktop tray icon ────────────────────────────────────────────────────────
+
+#[cfg(target_os = "linux")]
+mod tray_linux;
+
+/// Show the tray icon: `icon_argb` is `icon_size`² ARGB32 pixels (big
+/// endian), `menu` the entry labels (empty = separator).  `listener` gets
+/// `onActivate()` when the icon is clicked and `onMenuItem(index)` for a
+/// menu entry, on a native thread.  `{"ok":true}`, or an error with code
+/// `unsupported` where this library has no native tray (the caller then
+/// uses the JVM's).
+#[cfg(not(target_os = "android"))]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_msst_net_jni_DesktopTray_nativeStart(
+    mut env: JNIEnv,
+    _class: JClass,
+    title: JString,
+    icon_size: jni::sys::jint,
+    icon_argb: jni::objects::JByteArray,
+    menu: jni::objects::JObjectArray,
+    listener: JObject,
+) -> jstring {
+    remember_vm(&env);
+    guarded(&mut env, |env| {
+        #[cfg(target_os = "linux")]
+        {
+            let title = match string_arg(env, &title) {
+                Ok(t) => t,
+                Err(e) => return err_msg("request", "invalid_request", e),
+            };
+            let icon = match env.convert_byte_array(&icon_argb) {
+                Ok(argb) => tray_linux::icon(icon_size, argb),
+                Err(e) => Err(e.to_string()),
+            };
+            let icon = match icon {
+                Ok(i) => i,
+                Err(e) => return err_msg("request", "invalid_request", e),
+            };
+            let mut labels = Vec::new();
+            let n = env.get_array_length(&menu).unwrap_or(0);
+            for i in 0..n {
+                let label = env
+                    .get_object_array_element(&menu, i)
+                    .map_err(|e| e.to_string())
+                    .and_then(|o| string_arg(env, &JString::from(o)));
+                match label {
+                    Ok(l) => labels.push(l),
+                    Err(e) => return err_msg("request", "invalid_request", e),
+                }
+            }
+            let listener = match env.new_global_ref(listener) {
+                Ok(g) => g,
+                Err(e) => return err_msg("internal", "jni", e.to_string()),
+            };
+            let on_event = Box::new(move |event: tray_linux::Event| {
+                let Some(vm) = JVM.get() else { return };
+                let Ok(mut env) = vm.attach_current_thread_as_daemon() else { return };
+                let _ = match event {
+                    tray_linux::Event::Activate => env.call_method(listener.as_obj(), "onActivate", "()V", &[]),
+                    tray_linux::Event::Menu(i) => {
+                        env.call_method(listener.as_obj(), "onMenuItem", "(I)V", &[JValue::Int(i as i32)])
+                    }
+                };
+                if env.exception_check().unwrap_or(false) {
+                    let _ = env.exception_clear();
+                }
+            });
+            match tray_linux::start(tray_linux::Spec { title, icon, menu: labels, on_event }) {
+                Ok(()) => ok(json!({})),
+                Err(e) => err_msg("platform", "tray_failed", e),
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = (title, icon_size, icon_argb, menu, listener);
+            err_msg("platform", "unsupported", "no native tray on this platform")
+        }
+    })
+}
+
 // ── Core lifecycle (Android VpnService) ──────────────────────────────────────
 
 #[cfg(feature = "embedded-core")]

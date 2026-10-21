@@ -1,7 +1,5 @@
 package com.msst.net
 
-import androidx.compose.ui.window.Notification
-import androidx.compose.ui.window.TrayState
 import com.msst.net.jni.DesktopNotifications
 import com.msst.net.jni.JniBackend
 import com.msst.net.model.UiNotice
@@ -28,7 +26,7 @@ import javax.swing.JFileChooser
  * default).  Core runs as its own privileged service; this process stays
  * unprivileged.
  */
-class DesktopPlatform(private val tray: TrayState) : ControllerPlatform {
+class DesktopPlatform(private val tray: AppTray) : ControllerPlatform {
     override val variant = ControllerVariant.Desktop
     override val backend: ControllerBackend = JniBackend(socketPath = null)
 
@@ -51,9 +49,6 @@ class DesktopPlatform(private val tray: TrayState) : ControllerPlatform {
         }
     }
 
-    /** Brings the main window to the front; set by the window. */
-    @Volatile var activateWindow: () -> Unit = {}
-
     private val notifyScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     /** Linux: the desktop's own notification service (the JVM tray draws
      *  its own balloon there).  Windows and macOS: the tray notification,
@@ -68,8 +63,8 @@ class DesktopPlatform(private val tray: TrayState) : ControllerPlatform {
         val title = "访问请求"
         val body = "$who 想访问您的 $what 服务，请在应用中处理"
         notifyScope.launch {
-            val shown = nativeNotifications && DesktopNotifications.show(title, body) { activateWindow() }
-            if (!shown) tray.sendNotification(Notification(title, body, Notification.Type.Info))
+            val shown = nativeNotifications && DesktopNotifications.show(title, body) { tray.showWindow() }
+            if (!shown) tray.notify(title, body)
         }
     }
 }

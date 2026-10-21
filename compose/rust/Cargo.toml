@@ -37,10 +37,13 @@ tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "net", "
 serde_json = "1"
 tracing = "0.1"
 
-# Native desktop notifications (freedesktop D-Bus, pure Rust).  Windows
-# and macOS keep the JVM's tray notifications, which are already native.
+# Native desktop notifications and tray icon (freedesktop D-Bus, pure
+# Rust).  Windows and macOS keep the JVM's tray, which is already native.
 [target.'cfg(target_os = "linux")'.dependencies]
 notify-rust = "4"
+# Tray icon as a StatusNotifierItem (D-Bus, pure Rust); on the async-io
+# runtime notify-rust's zbus already uses.
+ksni = { version = "0.3", default-features = false, features = ["async-io", "blocking"] }
 
 [profile.release]
 # unwind (not abort) so JNI entry points can report panics as errors
