@@ -238,7 +238,11 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       # Gradle configures the Android modules too, which needs an SDK; the
       # ARM runners don't come with one.
+      # Its default package list includes "tools", which current sdkmanager
+      # no longer has.
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
       - name: rpmbuild
         if: matrix.os == 'linux'
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends rpm fakeroot
@@ -298,7 +302,11 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v4
+      # Its default package list includes "tools", which current sdkmanager
+      # no longer has.
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
       - name: cargo-ndk
         run: cargo install cargo-ndk --locked
       # libmsst_jni.so with the embedded Core, per ABI, into jniLibs/.

@@ -6,7 +6,7 @@ the Controller apps and the WebUI server ship.
     scripts/third-party-licenses.py --check  fail if it is out of date (CI)
 
 Sources:
-  - Rust crates: cargo-about (`cargo install cargo-about --locked`) over this
+  - Rust crates: cargo-about (`cargo install cargo-about --locked --features cli`) over this
     crate and the JNI crate (compose/rust, which pulls in Core for Android),
     all features; accepted licenses in about.toml.  Needs Core checked out
     next to this repository, as for building.
