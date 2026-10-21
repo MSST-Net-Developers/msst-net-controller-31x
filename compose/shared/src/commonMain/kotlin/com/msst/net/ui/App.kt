@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -86,12 +87,12 @@ private enum class Tab(val label: String, val icon: ImageVector) {
     Dns("域名", MdiIcons.Web),
 }
 
-/** Root of every Controller variant. */
+/** Root of every Controller variant; [chrome] when the window has no system title bar. */
 @Composable
-fun ControllerApp(platform: ControllerPlatform, store: ControllerStore) {
+fun ControllerApp(platform: ControllerPlatform, store: ControllerStore, chrome: WindowChrome? = null) {
     val ctx = remember(platform, store) { ControllerContext(platform, store) }
     MsstTheme {
-        CompositionLocalProvider(LocalController provides ctx) {
+        CompositionLocalProvider(LocalController provides ctx, LocalWindowChrome provides chrome) {
             Box(Modifier.fillMaxSize().background(Msst.colors.bgSecondary).safeDrawingPadding()) {
                 val session = platform.session
                 if (session == null) MainShell(onLogout = null) else SessionGate(session)
@@ -158,13 +159,21 @@ private fun MainShell(onLogout: (() -> Unit)?) {
     }
 }
 
+/** The top bar moves the window when it stands in for the system title bar. */
 @Composable
-private fun TopTabs(tab: Tab, onSelect: (Tab) -> Unit, onLogout: (() -> Unit)?) {
+private fun TitleBar(content: @Composable () -> Unit) {
+    val chrome = LocalWindowChrome.current
+    if (chrome == null) content() else chrome.DragArea(Modifier.fillMaxWidth(), content)
+}
+
+@Composable
+private fun TopTabs(tab: Tab, onSelect: (Tab) -> Unit, onLogout: (() -> Unit)?) = TitleBar {
     val c = Msst.colors
+    val chrome = LocalWindowChrome.current
     Row(
-        Modifier.fillMaxWidth().background(c.bgPrimary)
+        Modifier.fillMaxWidth().height(IntrinsicSize.Min).background(c.bgPrimary)
             .drawBehind { drawLine(c.borderLight, Offset(0f, size.height), Offset(size.width, size.height), 1.dp.toPx()) }
-            .padding(horizontal = 16.dp),
+            .padding(start = 16.dp, end = if (chrome != null) 0.dp else 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Logo(22.dp)
@@ -192,20 +201,23 @@ private fun TopTabs(tab: Tab, onSelect: (Tab) -> Unit, onLogout: (() -> Unit)?) 
         }
         Spacer(Modifier.weight(1f))
         if (onLogout != null) LinkButton("退出", onLogout, MdiIcons.Logout, color = c.textTertiary)
+        if (chrome != null) WindowControls(chrome)
     }
 }
 
 @Composable
-private fun CompactTopBar(title: String, onLogout: (() -> Unit)?) {
+private fun CompactTopBar(title: String, onLogout: (() -> Unit)?) = TitleBar {
     val c = Msst.colors
+    val chrome = LocalWindowChrome.current
     Row(
-        Modifier.fillMaxWidth().background(c.bgPrimary).height(52.dp).padding(horizontal = 16.dp),
+        Modifier.fillMaxWidth().background(c.bgPrimary).height(52.dp).padding(start = 16.dp, end = if (chrome != null) 0.dp else 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Logo(22.dp)
         Spacer(Modifier.width(10.dp))
         Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = c.textPrimary)
         if (onLogout != null) LinkButton("退出", onLogout, MdiIcons.Logout, color = c.textTertiary)
+        if (chrome != null) WindowControls(chrome)
     }
 }
 
