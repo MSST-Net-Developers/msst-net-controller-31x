@@ -10,7 +10,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
@@ -74,13 +75,8 @@ import androidx.compose.ui.input.pointer.PointerEvent
 import androidx.compose.ui.input.pointer.changedToDownIgnoreConsumed
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -94,14 +90,16 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import org.jetbrains.compose.resources.painterResource
 import com.msst.net.platform.PlatformServices
+import com.msst.net.resources.Res
+import com.msst.net.resources.msst_logo
 import com.msst.net.state.Banner
 import com.msst.net.state.BannerKind
 import com.msst.net.ui.LocalCompact
 import com.msst.net.ui.MdiIcons
 import com.msst.net.ui.theme.MonoFamily
 import com.msst.net.ui.theme.Msst
-import com.msst.net.ui.theme.MsstColors
 import com.msst.net.ui.theme.Radius
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -113,31 +111,15 @@ fun MIcon(icon: ImageVector, size: Dp = 18.dp, tint: Color = Color.Unspecified, 
     Icon(icon, contentDescription, Modifier.size(size), tint = if (tint == Color.Unspecified) androidx.compose.material3.LocalContentColor.current else tint)
 }
 
-/** Brand mark (same drawing as the Svelte `Logo`). */
+/** Brand mark: the MSST logo. */
 @Composable
 fun Logo(size: Dp = 24.dp) {
-    Canvas(Modifier.size(size)) { drawLogo() }
+    Image(logoPainter(), null, Modifier.size(size).clip(RoundedCornerShape(percent = 22)))
 }
 
 /** The brand mark as a [Painter] (window and tray icons). */
-object LogoPainter : Painter() {
-    override val intrinsicSize = Size(64f, 64f)
-    override fun DrawScope.onDraw() = drawLogo()
-}
-
-private fun DrawScope.drawLogo() {
-    val c = MsstColors()
-    val s = size.width / 64f
-    drawCircle(c.primaryLighter, radius = 30 * s)
-    drawCircle(c.primary, radius = 30 * s, style = Stroke(3 * s))
-    val p = Path().apply {
-        moveTo(16 * s, 32 * s)
-        quadraticTo(24 * s, 20 * s, 32 * s, 32 * s)
-        quadraticTo(40 * s, 44 * s, 48 * s, 32 * s)
-    }
-    drawPath(p, c.primaryDark, style = Stroke(3 * s, cap = StrokeCap.Round))
-    drawCircle(c.primaryDark, radius = 4 * s, center = Offset(32 * s, 32 * s))
-}
+@Composable
+fun logoPainter(): Painter = painterResource(Res.drawable.msst_logo)
 
 // ── Surfaces ─────────────────────────────────────────────────────────────────
 

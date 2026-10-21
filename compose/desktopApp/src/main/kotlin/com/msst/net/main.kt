@@ -17,7 +17,7 @@ import androidx.compose.ui.window.rememberTrayState
 import androidx.compose.ui.window.rememberWindowState
 import com.msst.net.state.ControllerStore
 import com.msst.net.ui.ControllerApp
-import com.msst.net.ui.components.LogoPainter
+import com.msst.net.ui.components.logoPainter
 import com.msst.net.ui.theme.MsstTheme
 import javax.swing.SwingUtilities
 
@@ -28,13 +28,13 @@ fun main() = application {
     val platform = remember { runCatching { DesktopPlatform(trayState) } }
     val scope = rememberCoroutineScope()
 
-    Tray(LogoPainter, state = trayState, tooltip = "MSST-Net 控制器") {
+    Tray(logoPainter(), state = trayState, tooltip = "MSST-Net 控制器") {
         Item("退出", onClick = ::exitApplication)
     }
     Window(
         onCloseRequest = ::exitApplication,
         title = "MSST-Net 控制器",
-        icon = LogoPainter,
+        icon = logoPainter(),
         state = rememberWindowState(width = 900.dp, height = 640.dp),
     ) {
         // Clicking an access-request notification shows this window.
