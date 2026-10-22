@@ -81,6 +81,40 @@ async fn connect_syncs_every_resource_from_core() {
     client.shutdown();
 }
 
+/// `network_warnings` change without an event: the next polled Health
+/// shows a new generation, and the room view is queried again — but not
+/// while the generation stands still.
+#[tokio::test]
+async fn generation_change_requeries_system_state() {
+    let generation = Arc::new(Mutex::new(1u64));
+    let warnings = Arc::new(Mutex::new(json!([])));
+    let (g, w) = (generation.clone(), warnings.clone());
+    let core = FakeCore::new(move |req| match req {
+        IpcRequest::Health => Ok(json!({ "status": "ok", "generation": *g.lock().unwrap() })),
+        IpcRequest::GetSystemState => Ok(json!({ "room_id": null, "peers": [], "network_warnings": *w.lock().unwrap() })),
+        other => default_responses(other),
+    });
+    let cfg = IpcClientConfig { poll_interval: Duration::from_millis(50), ..fast_config() };
+    let client = IpcClient::with_connector(cfg, StateStore::new(), core.connector());
+    synced(&client).await;
+
+    let system_state_queries = || core.requests().iter().filter(|r| matches!(r, IpcRequest::GetSystemState)).count();
+    let before = system_state_queries();
+    tokio::time::sleep(Duration::from_millis(250)).await; // several polls
+    assert_eq!(system_state_queries(), before, "generation unchanged: no extra queries");
+
+    *warnings.lock().unwrap() = json!([{ "kind": "route_conflict", "range": "172.22.0.0/16", "interface": "br-1a2b",
+                                         "route": "172.22.0.0/16 dev br-1a2b table main" }]);
+    *generation.lock().unwrap() = 2;
+    let c = client.clone();
+    wait_for("network warning appears", move || {
+        let c = c.clone();
+        async move { c.state_store().snapshot().await.room.network_warnings.first().is_some_and(|w| w.interface == "br-1a2b") }
+    })
+    .await;
+    client.shutdown();
+}
+
 #[tokio::test]
 async fn log_events_during_sync_do_not_break_it() {
     let core = FakeCore::new(default_responses);

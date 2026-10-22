@@ -663,6 +663,7 @@ impl IpcClient {
                 }
             }
 
+            let generation_before = self.generation().await;
             let mut errors = Vec::new();
             // A full rebuild takes several queries; Core's `generation`
             // (read via Health first and last) tells whether Core changed
@@ -688,6 +689,19 @@ impl IpcClient {
                     break;
                 }
                 tracing::debug!(?before, ?after, "Core changed during resync; querying again");
+            }
+
+            // Some state comes with no event (GetSystemState's
+            // `network_warnings`): when a polled Health shows that Core's
+            // generation moved, re-query the room view as well.
+            if !sync && set.contains(&Resource::Health) && !set.contains(&Resource::Room) && generation_before.is_some() {
+                let after = self.generation().await;
+                if after != generation_before {
+                    tracing::debug!(?generation_before, ?after, "Core generation moved; re-querying the room view");
+                    if let Err(e) = self.refresh_one(Resource::Room).await {
+                        tracing::warn!(error = %e, "failed to re-query the room view");
+                    }
+                }
             }
 
             if sync {

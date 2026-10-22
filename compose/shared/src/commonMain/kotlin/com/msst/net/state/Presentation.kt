@@ -6,6 +6,7 @@ package com.msst.net.state
 import com.msst.net.model.ConnectionStatus
 import com.msst.net.model.ControllerView
 import com.msst.net.model.FirewallRule
+import com.msst.net.model.NetworkWarning
 import com.msst.net.model.PermissionGroup
 import com.msst.net.model.ProtocolPort
 import com.msst.net.model.RoomRelay
@@ -255,6 +256,14 @@ fun filterApps(apps: List<DeviceApp>, query: String, showSystem: Boolean, select
         .filter { it.packageName in selected || showSystem || !it.system }
         .filter { q.isEmpty() || it.label.contains(q, ignoreCase = true) || it.packageName.contains(q, ignoreCase = true) }
         .sortedWith(compareBy<DeviceApp>({ it.packageName !in selected }, { it.label.lowercase() }))
+}
+
+/** One line for a host routing problem Core reported. */
+fun networkWarningLabel(w: NetworkWarning): String = when (w.kind) {
+    "route_conflict" -> "${w.`interface`} 的路由 ${w.route ?: w.range} 与 MSST 网段 ${w.range} 重叠，" +
+        "MSST 未接管该网段，可能无法与部分设备通信"
+    "route_hijacked" -> "发往 MSST 网段 ${w.range} 的流量被路由到了 ${w.`interface`}，可能无法与其他设备通信"
+    else -> "网络配置问题（${w.kind}）：${w.range} / ${w.`interface`}"
 }
 
 /** The room relay line of the room view; null when the room has none. */

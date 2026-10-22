@@ -149,6 +149,24 @@ pub struct RoomState {
     /// The relay the room creator chose for room traffic (protocol 0.4);
     /// `None` = not specified (members use their own relays).
     pub room_relay: Option<RoomRelay>,
+    /// Host routing problems Core found (`GetSystemState` only, not in
+    /// `RoomStateChanged`; empty from older Cores and where Core doesn't
+    /// check).  Not room state, but it arrives with the same response.
+    pub network_warnings: Vec<NetworkWarning>,
+}
+
+/// Something on Core's host that keeps MSST traffic off the MSST interface
+/// (another VPN, a Docker network, …), as Core reports it.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct NetworkWarning {
+    /// `route_conflict` (another interface's `route` lies inside the MSST
+    /// `range`) or `route_hijacked` (traffic to `range` leaves through
+    /// `interface`).  Kept as text: an unknown kind is still shown.
+    pub kind: String,
+    pub range: String,
+    pub interface: String,
+    pub route: Option<String>,
 }
 
 /// A room's own relay, as Core reports it.

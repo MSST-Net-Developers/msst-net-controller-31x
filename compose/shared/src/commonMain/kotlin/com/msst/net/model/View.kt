@@ -180,9 +180,26 @@ data class RoomState(
     val peers: List<RoomPeer> = emptyList(),
     /** The relay the room creator chose (protocol 0.4); null = not specified. */
     @SerialName("room_relay") val roomRelay: RoomRelay? = null,
+    /** Host routing problems Core found (from `GetSystemState`; empty from
+     *  older Cores).  Not room state, but delivered with it. */
+    @SerialName("network_warnings") val networkWarnings: List<NetworkWarning> = emptyList(),
 ) {
     val inRoom get() = !roomId.isNullOrEmpty()
 }
+
+/** Something on Core's host that keeps MSST traffic off the MSST interface
+ *  (another VPN, a Docker network, …). */
+@Serializable
+data class NetworkWarning(
+    /** `route_conflict` or `route_hijacked`; an unknown kind is still shown. */
+    val kind: String = "",
+    /** The MSST range concerned. */
+    val range: String = "",
+    /** The other interface. */
+    val `interface`: String = "",
+    /** The conflicting route (`route_conflict`). */
+    val route: String? = null,
+)
 
 /** A room's own relay as Core reports it. */
 @Serializable

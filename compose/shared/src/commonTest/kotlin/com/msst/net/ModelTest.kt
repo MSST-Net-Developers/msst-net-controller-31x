@@ -4,6 +4,7 @@ import com.msst.net.model.ConnectionStatus
 import com.msst.net.model.ControllerJson
 import com.msst.net.model.ControllerView
 import com.msst.net.model.Health
+import com.msst.net.model.NetSettings
 import com.msst.net.model.PathView
 import com.msst.net.model.RelayList
 import com.msst.net.model.RelayRegistration
@@ -43,6 +44,22 @@ class ModelTest {
            "room":{"peers":[],"relay":null,"room_id":null,"room_name":null},
            "sync":{"state":"synced"}}}
     """.trimIndent()
+
+    @Test
+    fun decodesNetworkWarningsAndTheBypassSetting() {
+        val room = ControllerJson.decodeFromString(RoomState.serializer(), """
+            {"room_id":null,"peers":[],"network_warnings":[
+              {"kind":"route_conflict","range":"172.22.0.0/16","interface":"br-1a2b","route":"172.22.0.0/16 dev br-1a2b table main"},
+              {"kind":"route_hijacked","range":"fd22:2222:2222:2222::/64","interface":"tailscale0","route":null}]}
+        """.trimIndent())
+        assertEquals(listOf("br-1a2b", "tailscale0"), room.networkWarnings.map { it.`interface` })
+        assertNull(room.networkWarnings[1].route)
+        // Older Rust libraries / Cores: none.
+        assertTrue(ControllerJson.decodeFromString(RoomState.serializer(), """{"peers":[]}""").networkWarnings.isEmpty())
+
+        assertEquals(false, ControllerJson.decodeFromString(NetSettings.serializer(), """{"bypass_other_vpns":false}""").bypassOtherVpns)
+        assertNull(ControllerJson.decodeFromString(NetSettings.serializer(), """{"disable_p2p":true}""").bypassOtherVpns, "older Core: no switch")
+    }
 
     @Test
     fun decodesTheControllerView() {

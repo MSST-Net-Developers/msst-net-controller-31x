@@ -4,6 +4,7 @@ import com.msst.net.model.ConnectionDiagnostics
 import com.msst.net.model.ConnectionStatus
 import com.msst.net.model.ControllerView
 import com.msst.net.model.Health
+import com.msst.net.model.NetworkWarning
 import com.msst.net.model.OperationState
 import com.msst.net.model.PermissionGroup
 import com.msst.net.model.ProtocolPort
@@ -31,6 +32,7 @@ import com.msst.net.state.normalizeNamespace
 import com.msst.net.state.oneDecimal
 import com.msst.net.state.operationStage
 import com.msst.net.state.pathLabel
+import com.msst.net.state.networkWarningLabel
 import com.msst.net.state.roomRelayLabel
 import com.msst.net.state.validHandle
 import com.msst.net.state.validPortExpr
@@ -193,6 +195,19 @@ class PresentationTest {
         assertTrue(mobile.interactiveAuth)
         assertTrue(web.manualRuleCreation)
         assertFalse(web.interactiveAuth)
+    }
+
+    @Test
+    fun networkWarningLabels() {
+        assertEquals(
+            "br-1a2b 的路由 172.22.0.0/16 dev br-1a2b table main 与 MSST 网段 172.22.0.0/16 重叠，MSST 未接管该网段，可能无法与部分设备通信",
+            networkWarningLabel(NetworkWarning("route_conflict", "172.22.0.0/16", "br-1a2b", "172.22.0.0/16 dev br-1a2b table main")),
+        )
+        assertEquals(
+            "发往 MSST 网段 172.22.0.0/16 的流量被路由到了 tailscale0，可能无法与其他设备通信",
+            networkWarningLabel(NetworkWarning("route_hijacked", "172.22.0.0/16", "tailscale0")),
+        )
+        assertEquals("网络配置问题（future）：172.22.0.0/16 / zt0", networkWarningLabel(NetworkWarning("future", "172.22.0.0/16", "zt0")))
     }
 
     @Test

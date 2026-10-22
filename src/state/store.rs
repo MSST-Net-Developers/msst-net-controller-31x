@@ -527,7 +527,16 @@ fn apply_event_to(st: &mut SystemState, event: &IpcEvent, full_events: bool) -> 
                     // An undecodable room relay is shown as none rather than
                     // dropping the whole room view.
                     let room_relay = room_relay.clone().and_then(|v| serde_json::from_value(v).ok());
-                    st.room = RoomState { room_id: room_id.clone(), room_name: room_name.clone(), relay: relay.clone(), peers, room_relay };
+                    // The event doesn't carry the network warnings; they stay.
+                    let network_warnings = std::mem::take(&mut st.room.network_warnings);
+                    st.room = RoomState {
+                        room_id: room_id.clone(),
+                        room_name: room_name.clone(),
+                        relay: relay.clone(),
+                        peers,
+                        room_relay,
+                        network_warnings,
+                    };
                     (vec![Room], vec![])
                 }
                 Err(_) => (vec![], vec![Room, Nodes]),
@@ -649,6 +658,31 @@ mod tests {
         let store = StateStore::new();
         assert!(store.apply_resource(0, ResourceData::room(&q).unwrap()).await);
         assert_eq!(store.snapshot().await.room.room_relay.unwrap().state, "ok");
+    }
+
+    #[tokio::test]
+    async fn network_warnings_come_from_system_state_and_survive_room_events() {
+        let store = StateStore::new();
+        store.set_protocol_minor(4).await;
+        let q = json!({ "room_id": null, "peers": [], "network_warnings": [
+            { "kind": "route_hijacked", "range": "172.22.0.0/16", "interface": "tailscale0", "route": null },
+            { "kind": "some_future_kind", "range": "fd22:2222:2222:2222::/64", "interface": "zt0" }
+        ]});
+        assert!(store.apply_resource(0, ResourceData::room(&q).unwrap()).await);
+        let w = store.snapshot().await.room.network_warnings;
+        assert_eq!(w.len(), 2);
+        assert_eq!((w[0].kind.as_str(), w[0].interface.as_str(), w[0].route.as_deref()), ("route_hijacked", "tailscale0", None));
+        assert_eq!(w[1].kind, "some_future_kind");
+        // A room event (which doesn't carry them) keeps them.
+        store.apply_event(&IpcEvent::RoomStateChanged {
+            room_id: Some("space-1".into()), room_name: Some("game".into()), peers: vec![], relay: None, room_relay: None,
+        }).await;
+        let room = store.snapshot().await.room;
+        assert_eq!((room.room_id.as_deref(), room.network_warnings.len()), (Some("space-1"), 2));
+        // The next query is authoritative, and older Cores report none.
+        let epoch = store.epoch(Resource::Room).await;
+        assert!(store.apply_resource(epoch, ResourceData::room(&json!({ "room_id": null, "peers": [] })).unwrap()).await);
+        assert!(store.snapshot().await.room.network_warnings.is_empty());
     }
 
     #[tokio::test]

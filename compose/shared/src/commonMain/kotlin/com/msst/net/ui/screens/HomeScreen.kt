@@ -37,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.msst.net.model.ControllerView
+import com.msst.net.model.NetworkWarning
 import com.msst.net.model.Req
 import com.msst.net.model.RoomPeer
 import com.msst.net.model.RoomRelay
@@ -49,6 +50,7 @@ import com.msst.net.state.coordinatorActionsAvailable
 import com.msst.net.state.coordinatorUnreachable
 import com.msst.net.state.deviceMnemonic
 import com.msst.net.state.errorMessage
+import com.msst.net.state.networkWarningLabel
 import com.msst.net.state.pathLabel
 import com.msst.net.state.roomRelayLabel
 import com.msst.net.state.userMnemonic
@@ -99,7 +101,30 @@ fun HomeScreen() {
     val ctx = LocalController.current
     val view by ctx.store.view.collectAsState()
     val room = view?.state?.room
-    if (room != null && room.inRoom) RoomView(view!!) else ModePage(view)
+    Column(Modifier.fillMaxSize()) {
+        room?.networkWarnings?.takeIf { it.isNotEmpty() }?.let { NetworkWarningsBar(it) }
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            if (room != null && room.inRoom) RoomView(view!!) else ModePage(view)
+        }
+    }
+}
+
+/** Host routing problems Core reported (another VPN or network on the
+ *  MSST ranges), in room and LAN mode alike. */
+@Composable
+private fun NetworkWarningsBar(warnings: List<NetworkWarning>) {
+    val c = Msst.colors
+    Column(
+        Modifier.fillMaxWidth().background(c.warningLight).padding(horizontal = if (LocalCompact.current) 16.dp else 24.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        warnings.forEach { w ->
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Dot(c.warningDot)
+                Text(networkWarningLabel(w), style = MaterialTheme.typography.bodySmall, color = c.warning)
+            }
+        }
+    }
 }
 
 // ── In a room ────────────────────────────────────────────────────────────────

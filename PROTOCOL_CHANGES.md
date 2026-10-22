@@ -147,3 +147,27 @@ sequence number and can detect gaps from that point forward.
 2. Core: add `seq` counter and `GetEventsSince` handler
 3. Controller: already ready (graceful degradation built in)
 4. Deploy Core first, then Controller (safe in any order due to Option<_>)
+---
+
+## 3. Host routing warnings and the VPN bypass setting — IMPLEMENTED
+
+### Status: IMPLEMENTED (Core `net-hardening`, Controller `net-hardening-sync`); additive, no version bump
+
+Core (see its `docs/IPC_PROTOCOL_0.4.md`) added two fields:
+
+- `GetNetSettings` / `SetNetSettings`: `bypass_other_vpns` (boolean,
+  default `true`, Linux, applies immediately) — Core's own traffic (peers,
+  relays, Coordinator) bypasses other VPNs' full tunnels.  Shown as a
+  switch under 设置 → 网络传输; hidden when Core doesn't report the field.
+- `GetSystemState.network_warnings`: `[{kind, range, interface, route}]`
+  with `kind` `route_conflict` or `route_hijacked`.  Shown as a warning
+  bar on the home screen (room and LAN mode).  Kept in the room view
+  (`RoomState.network_warnings`); `RoomStateChanged` doesn't carry it and
+  leaves it unchanged.
+
+**Gap: no event.**  A change only advances `generation`.  The Controller
+therefore re-queries `GetSystemState` whenever a polled `Health` shows a
+new generation (`IpcClient` refresher) — up to one poll interval (10 s)
+late, on top of Core's 60 s route check.  If that proves too slow, a
+dedicated event (e.g. `NetworkWarningsChanged`) would be the Core-side
+extension to propose.

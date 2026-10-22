@@ -500,6 +500,15 @@ private fun AdvancedSections(ready: Boolean) {
                     hint = "优先通过 systemd-resolved 配置，不可用时自动切换为 DNS 拦截")
                 RadioRow("仅使用 DNS 拦截", s.linuxDnsMode == "iptables_only", { patch("linux_dns_mode" to "iptables_only") }, !busy,
                     hint = "仅使用 iptables 配置 DNS 拦截规则，跳过 systemd-resolved")
+                // Cores without the setting report none: no switch.
+                s.bypassOtherVpns?.let { on ->
+                    ToggleRow(
+                        "绕过其他 VPN 的全局隧道（仅 Linux）",
+                        "MSST 自身的流量（对端、中继、协调服务器）走物理网络，不经 Tailscale 出口节点等其他 VPN；" +
+                            "只能经其他 VPN 访问中继或协调服务器时请关闭。立即生效",
+                        on, { patch("bypass_other_vpns" to it) }, !busy,
+                    )
+                }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 FieldLabel("流量计数（路径切换时自动重置）", Modifier.weight(1f))

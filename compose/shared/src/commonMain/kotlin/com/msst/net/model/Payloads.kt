@@ -22,6 +22,9 @@ data class NetSettings(
     @SerialName("mtu_override") val mtuOverride: Int? = null,
     @SerialName("keepalive_secs") val keepaliveSecs: Int? = null,
     @SerialName("linux_dns_mode") val linuxDnsMode: String? = null,
+    /** Linux: Core's own traffic bypasses other VPNs' full tunnels; null
+     *  from Cores without the setting. */
+    @SerialName("bypass_other_vpns") val bypassOtherVpns: Boolean? = null,
 )
 
 @Serializable
