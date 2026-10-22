@@ -49,6 +49,7 @@ import com.msst.net.platform.query
 import com.msst.net.state.Phase
 import com.msst.net.state.attempt
 import com.msst.net.state.connectionLabel
+import com.msst.net.state.discoveryStatsLine
 import com.msst.net.state.coreReady
 import com.msst.net.state.displayNameProblem
 import com.msst.net.state.encryptionLabel
@@ -457,11 +458,9 @@ private fun AdvancedSections(ready: Boolean) {
                             InfoLine(roomRelayLabel(RoomRelay(r.address, r.selfHosted, r.state)).orEmpty(), if (r.state == "down") c.warning else c.textSecondary)
                             InfoLine("解析地址 ${r.addr ?: "-"}  已发送登记 ${r.txSreg}", mono = true)
                         }
-                        rl.secureDiscovery?.let { sd ->
-                            FieldLabel("游戏发现")
-                            if (!sd.active) InlineNote("当前中转服务器未提供公钥，无法通过它进行安全的游戏发现")
-                            InfoLine("已接收 ${sd.rxAccepted}" + sd.drop.filterValues { it > 0 }.entries.joinToString("") { "  丢弃（${dropReasonLabel(it.key)}）${it.value}" }, mono = true)
-                            if (sd.relays.isNotEmpty()) InfoLine("发往：${sd.relays.joinToString("、")}", mono = true)
+                        rl.discovery?.let { d ->
+                            FieldLabel("游戏发现（经 WireGuard 端到端发送）")
+                            InfoLine(discoveryStatsLine(d), mono = true)
                         }
                     }
                 }
@@ -571,13 +570,6 @@ private fun AdvancedSections(ready: Boolean) {
 }
 
 /** Why a game discovery packet was dropped (`secure_discovery.drop`). */
-private fun dropReasonLabel(reason: String) = when (reason) {
-    "unverified_sender" -> "发送方未经验证"
-    "duplicate" -> "经其他中转重复到达"
-    "replay" -> "重放"
-    "rate_limited" -> "超出速率限制"
-    else -> reason
-}
 
 /** "Automatic" or a custom integer within [range] (MTU, keepalive). */
 @Composable

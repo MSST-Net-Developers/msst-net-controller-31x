@@ -170,6 +170,10 @@ data class RoomPeer(
     val ipv6: String? = null,
     val hostname: String? = null,
     @SerialName("display_name") val displayName: String? = null,
+    /** Game discovery with this member (Core 3.1.6+): `ok`, `unsupported`
+     *  (an older Core: none either way) or `unknown`; null for this device
+     *  and from older Cores. */
+    val discovery: String? = null,
 )
 
 @Serializable

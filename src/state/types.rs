@@ -193,6 +193,11 @@ pub struct RoomPeer {
     pub hostname: Option<String>,
     #[serde(default)]
     pub display_name: Option<String>,
+    /// Game discovery with this member (Core 3.1.6+): `ok`, `unsupported`
+    /// (an older Core: none either way) or `unknown`; `None` for ourselves
+    /// and from older Cores.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discovery: Option<String>,
 }
 
 // ── ACL ──────────────────────────────────────────────────────────────────────
@@ -309,4 +314,21 @@ impl Resource {
         Resource::AclGroups,
         Resource::PendingAuth,
     ];
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn room_peer_keeps_game_discovery_support() {
+        // Passed through to the UI as is (Core 3.1.6+); absent from older
+        // Cores and for this device.
+        let p: RoomPeer = serde_json::from_str(r#"{"device_id":"device-0000000c","discovery":"unsupported"}"#).unwrap();
+        assert_eq!(p.discovery.as_deref(), Some("unsupported"));
+        assert_eq!(serde_json::to_value(&p).unwrap()["discovery"], "unsupported");
+        let old: RoomPeer = serde_json::from_str(r#"{"device_id":"device-0000000c"}"#).unwrap();
+        assert_eq!(old.discovery, None);
+        assert!(serde_json::to_value(&old).unwrap().get("discovery").is_none());
+    }
 }

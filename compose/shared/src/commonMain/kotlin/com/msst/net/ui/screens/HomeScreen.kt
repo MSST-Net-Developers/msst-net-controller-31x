@@ -49,6 +49,7 @@ import com.msst.net.state.coreStatusLabel
 import com.msst.net.state.coordinatorActionsAvailable
 import com.msst.net.state.coordinatorUnreachable
 import com.msst.net.state.deviceMnemonic
+import com.msst.net.state.discoveryNote
 import com.msst.net.state.errorMessage
 import com.msst.net.state.networkWarningLabel
 import com.msst.net.state.pathLabel
@@ -293,6 +294,7 @@ private fun PeerCardContent(peer: RoomPeer, self: Boolean, path: String?, servic
                         style = MaterialTheme.typography.labelSmall,
                         color = if (path == null) c.textMuted else c.textSecondary,
                     )
+                    discoveryNote(peer)?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = c.warning) }
                 }
             }
             peer.hostname?.let { CopyButton(it, services, "复制主机名") }

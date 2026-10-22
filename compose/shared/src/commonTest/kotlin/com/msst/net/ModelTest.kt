@@ -15,6 +15,9 @@ import com.msst.net.model.AuthDecision
 import com.msst.net.model.Req
 import com.msst.net.model.UiNotice
 import com.msst.net.model.quickDeviceRule
+import com.msst.net.model.RoomPeer
+import com.msst.net.state.discoveryNote
+import com.msst.net.state.discoveryStatsLine
 import com.msst.net.ui.screens.diagPathLabel
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -139,12 +142,14 @@ class ModelTest {
         assertEquals(1_900_000_060L, path.peers[1].nextProbeAt)
         val relays = ControllerJson.decodeFromString<RelayList>("""
             {"relays":[{"addr":"198.51.100.1:7000","pub_key":"k"}],"current":"198.51.100.1:7000","rtt_ms":{},
-             "secure_discovery":{"tx_register":1,"tx_data":2,"rx_accepted":3,"active":true,
-               "drop":{"replay":0,"unverified_sender":4}}}""")
-        val sd = relays.secureDiscovery!!
-        assertTrue(sd.active)
-        assertEquals(3, sd.rxAccepted)
-        assertEquals(4, sd.drop["unverified_sender"])
+             "discovery":{"transport":"wireguard","tx_messages":6,"tx_skipped_unsupported":2,"rx_accepted":3,
+               "drop":{"not_member":0,"not_discovery":0,"rate_limited":4}}}""")
+        val d = relays.discovery!!
+        assertEquals("wireguard", d.transport)
+        assertEquals(3, d.rxAccepted)
+        assertEquals("已发送 6  已接收 3  未发送（成员版本过旧）2  丢弃（超出速率限制）4", discoveryStatsLine(d))
+        // A 3.1.5 Core's relay-based secure discovery is no longer shown.
+        assertNull(ControllerJson.decodeFromString<RelayList>("""{"secure_discovery":{"active":true}}""").discovery)
     }
 
     @Test
@@ -173,13 +178,24 @@ class ModelTest {
 
         val relays = ControllerJson.decodeFromString<RelayList>("""
             {"relays":[{"addr":"198.51.100.1:7000","pub_key":"k","features":["sdisc1","sreg1"]}],
-             "secure_discovery":{"rx_accepted":1,"active":true,"drop":{"duplicate":2},"relays":["198.51.100.1:7000","203.0.113.9:7000"]},
              "registration":{"mode":"sreg1","tx_sreg":5,"last_relay_path_ok_at":null},
              "room_relay":{"address":"relay.example.com:7000","self_hosted":true,"state":"ok","addr":"203.0.113.9:7000","tx_sreg":3}}""")
         assertEquals(listOf("sdisc1", "sreg1"), relays.relays[0].features)
-        assertEquals(2, relays.secureDiscovery!!.relays.size)
         assertEquals(RelayRegistration("sreg1", 5, null), relays.registration)
         assertEquals("203.0.113.9:7000", relays.roomRelay!!.addr)
+    }
+
+    @Test
+    fun roomMembersShowGameDiscoverySupport() {
+        val room = ControllerJson.decodeFromString<RoomState>("""
+            {"room_id":"space-1","peers":[
+              {"device_id":"device-00000001","discovery":null},
+              {"device_id":"device-0000000b","discovery":"ok"},
+              {"device_id":"device-0000000c","discovery":"unsupported"},
+              {"device_id":"device-0000000d"}]}""")
+        assertEquals(listOf(null, "ok", "unsupported", null), room.peers.map { it.discovery })
+        assertEquals(listOf(null, null, "该成员版本过旧，无法互相发现游戏", null), room.peers.map { discoveryNote(it) })
+        assertNull(discoveryNote(RoomPeer("device-0000000e", discovery = "unknown")))
     }
 
     @Test

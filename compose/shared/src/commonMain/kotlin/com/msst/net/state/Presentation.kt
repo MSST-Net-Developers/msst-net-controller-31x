@@ -266,6 +266,26 @@ fun networkWarningLabel(w: NetworkWarning): String = when (w.kind) {
     else -> "网络配置问题（${w.kind}）：${w.range} / ${w.`interface`}"
 }
 
+/** The game discovery line of a room member's card; null when there is
+ *  nothing to say (supported, this device, or an older Core). */
+fun discoveryNote(peer: com.msst.net.model.RoomPeer): String? = when (peer.discovery) {
+    "unsupported" -> "该成员版本过旧，无法互相发现游戏"
+    else -> null
+}
+
+/** The game discovery counters (`GetRelays.discovery`) in one line. */
+fun discoveryStatsLine(d: com.msst.net.model.DiscoveryStats): String =
+    "已发送 ${d.txMessages}  已接收 ${d.rxAccepted}" +
+        (if (d.txSkippedUnsupported > 0) "  未发送（成员版本过旧）${d.txSkippedUnsupported}" else "") +
+        d.drop.filterValues { it > 0 }.entries.joinToString("") { "  丢弃（${discoveryDropLabel(it.key)}）${it.value}" }
+
+private fun discoveryDropLabel(reason: String) = when (reason) {
+    "not_member" -> "发送方不是房间成员"
+    "not_discovery" -> "不是游戏发现广播"
+    "rate_limited" -> "超出速率限制"
+    else -> reason
+}
+
 /** The room relay line of the room view; null when the room has none. */
 fun roomRelayLabel(r: RoomRelay?): String? {
     r ?: return null

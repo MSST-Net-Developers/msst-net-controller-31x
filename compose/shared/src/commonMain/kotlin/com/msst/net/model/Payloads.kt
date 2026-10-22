@@ -85,7 +85,8 @@ data class RelayList(
     val relays: List<Relay> = emptyList(),
     val current: String? = null,
     @SerialName("rtt_ms") val rttMs: Map<String, Double> = emptyMap(),
-    @SerialName("secure_discovery") val secureDiscovery: SecureDiscovery? = null,
+    /** Game discovery counters (Core 3.1.6+, over WireGuard). */
+    val discovery: DiscoveryStats? = null,
     /** Registration with the current relay (0.4). */
     val registration: RelayRegistration? = null,
     /** The room's own relay; null outside a room that has one (0.4). */
@@ -111,16 +112,18 @@ data class RoomRelayDiag(
     @SerialName("tx_sreg") val txSreg: Long = 0,
 )
 
-/** Game discovery through the current relay (`GetRelays`).  Inactive when
- *  the relay has no public key. */
+/** Game discovery (`GetRelays.discovery`, Core 3.1.6+): sent to each room
+ *  member end to end over WireGuard. */
 @Serializable
-data class SecureDiscovery(
-    val active: Boolean = false,
+data class DiscoveryStats(
+    val transport: String = "",
+    /** Messages sent (one per member per broadcast). */
+    @SerialName("tx_messages") val txMessages: Long = 0,
+    /** Broadcasts a member didn't get: it doesn't support this (older Core). */
+    @SerialName("tx_skipped_unsupported") val txSkippedUnsupported: Long = 0,
     @SerialName("rx_accepted") val rxAccepted: Long = 0,
-    /** Dropped packets by reason (`unverified_sender`, `duplicate`, …). */
+    /** Dropped broadcasts by reason (`not_member`, `not_discovery`, `rate_limited`). */
     val drop: Map<String, Long> = emptyMap(),
-    /** Relays discovery goes to (`IP:port`; empty outside a room). */
-    val relays: List<String> = emptyList(),
 )
 
 @Serializable
