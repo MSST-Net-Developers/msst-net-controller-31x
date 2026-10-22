@@ -195,6 +195,9 @@ class PresentationTest {
         assertTrue(mobile.interactiveAuth)
         assertTrue(web.manualRuleCreation)
         assertFalse(web.interactiveAuth)
+        // Linux-only settings: not for the embedded Android Core.
+        assertTrue(desktop.linuxCoreSettings && web.linuxCoreSettings)
+        assertFalse(mobile.linuxCoreSettings)
     }
 
     @Test

@@ -79,12 +79,16 @@ data class ControllerFeatures(
      *  notifications.  Without it, requests are left to another Controller
      *  (or time out in Core). */
     val interactiveAuth: Boolean,
+    /** The Linux-only network settings (DNS mode, other-VPN handling).  The
+     *  mobile Controller always runs with its embedded Android Core, where
+     *  they have no effect; desktop and web may control a Linux Core. */
+    val linuxCoreSettings: Boolean,
 ) {
     companion object {
         fun of(variant: ControllerVariant) = when (variant) {
-            ControllerVariant.Desktop -> ControllerFeatures(manualRuleCreation = true, interactiveAuth = true)
-            ControllerVariant.Mobile -> ControllerFeatures(manualRuleCreation = false, interactiveAuth = true)
-            ControllerVariant.Web -> ControllerFeatures(manualRuleCreation = true, interactiveAuth = false)
+            ControllerVariant.Desktop -> ControllerFeatures(manualRuleCreation = true, interactiveAuth = true, linuxCoreSettings = true)
+            ControllerVariant.Mobile -> ControllerFeatures(manualRuleCreation = false, interactiveAuth = true, linuxCoreSettings = false)
+            ControllerVariant.Web -> ControllerFeatures(manualRuleCreation = true, interactiveAuth = false, linuxCoreSettings = true)
         }
     }
 }
