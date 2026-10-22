@@ -106,7 +106,7 @@ fun DnsScreen() {
                 }
             }
             when {
-                !authenticated -> EmptyState("域名管理需要先完成 MSST 接入认证\n请点击首页的「接入认证」按钮完成认证")
+                !authenticated -> EmptyState("域名管理需要先完成 MSST-Net 接入认证\n请点击首页的「接入认证」按钮完成认证")
                 loading -> EmptyState("加载中…")
                 error != null -> Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                     InlineError(error!!)

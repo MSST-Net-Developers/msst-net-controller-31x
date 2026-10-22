@@ -190,7 +190,7 @@ fn core_error_message(code: &str, raw: &str) -> String {
         NOT_FOUND => "找不到对应的对象，它可能已被删除或已处理。".into(),
         MNEMONIC_NOT_FOUND => with_reason("找不到该助记符对应的设备或用户"),
         NOT_INITIALIZED => "客户端核心尚未完成初始化，请稍后重试。".into(),
-        NOT_AUTHENTICATED => "请先完成 MSST 接入认证。".into(),
+        NOT_AUTHENTICATED => "请先完成 MSST-Net 接入认证。".into(),
         AUTH_FAILED => "认证失败，请重试。".into(),
         COORDINATOR_UNAVAILABLE => "无法连接协调服务器，请检查网络连接后重试。".into(),
         COORDINATOR_ERROR => "协调服务器返回了错误，请稍后重试。".into(),

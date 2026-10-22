@@ -91,7 +91,7 @@ fun coreBanner(view: ControllerView?, backendError: String?, authPlace: String):
         // While the coordinator is unreachable authentication is impossible;
         // the status bar explains why.
         s.accessAuthRequired && s.health?.isAuthenticated != true && !coordinatorUnreachable(v) ->
-            Banner(BannerKind.Warn, "MSST 接入认证未完成或已过期，请在${authPlace}完成接入认证")
+            Banner(BannerKind.Warn, "MSST-Net 接入认证未完成或已过期，请在${authPlace}完成接入认证")
         s.health?.isViewer == true -> Banner(
             BannerKind.Info,
             "只读模式：当前账户可以查看状态，但不能进行更改。如需管理权限，请将该账户加入 msst-net 用户组（Windows：MSST-Net Administrators）后重新启动控制器",
@@ -260,9 +260,9 @@ fun filterApps(apps: List<DeviceApp>, query: String, showSystem: Boolean, select
 
 /** One line for a host routing problem Core reported. */
 fun networkWarningLabel(w: NetworkWarning): String = when (w.kind) {
-    "route_conflict" -> "${w.`interface`} 的路由 ${w.route ?: w.range} 与 MSST 网段 ${w.range} 重叠，" +
-        "MSST 未接管该网段，可能无法与部分设备通信"
-    "route_hijacked" -> "发往 MSST 网段 ${w.range} 的流量被路由到了 ${w.`interface`}，可能无法与其他设备通信"
+    "route_conflict" -> "${w.`interface`} 的路由 ${w.route ?: w.range} 与 MSST-Net 网段 ${w.range} 重叠，" +
+        "MSST-Net 未接管该网段，可能无法与部分设备通信"
+    "route_hijacked" -> "发往 MSST-Net 网段 ${w.range} 的流量被路由到了 ${w.`interface`}，可能无法与其他设备通信"
     else -> "网络配置问题（${w.kind}）：${w.range} / ${w.`interface`}"
 }
 

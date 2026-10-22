@@ -504,16 +504,16 @@ private fun AdvancedSections(ready: Boolean) {
                 s.bypassOtherVpns?.let { on ->
                     ToggleRow(
                         "绕过其他 VPN 的全局隧道（仅 Linux）",
-                        "MSST 自身的流量（对端、中继、协调服务器）走物理网络，不经 Tailscale 出口节点等其他 VPN；" +
+                        "MSST-Net 自身的流量（对端、中继、协调服务器）走物理网络，不经 Tailscale 出口节点等其他 VPN；" +
                             "只能经其他 VPN 访问中继或协调服务器时请关闭。立即生效",
                         on, { patch("bypass_other_vpns" to it) }, !busy,
                     )
                 }
                 s.blockOtherVpnsOverMsst?.let { on ->
                     ToggleRow(
-                        "阻止其他 VPN 经 MSST 传输（仅 Linux）",
-                        "Tailscale 会把 MSST 地址当作直连路径，形成隧道套隧道；开启后它改走自己的其他路径。" +
-                            "若 Tailscale 经 MSST 反而更快可关闭。立即生效",
+                        "阻止其他 VPN 经 MSST-Net 传输（仅 Linux）",
+                        "Tailscale 会把 MSST-Net 地址当作直连路径，形成隧道套隧道；开启后它改走自己的其他路径。" +
+                            "若 Tailscale 经 MSST-Net 反而更快可关闭。立即生效",
                         on, { patch("block_other_vpns_over_msst" to it) }, !busy,
                     )
                 }
