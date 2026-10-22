@@ -187,7 +187,7 @@ class MsstVpnService : VpnService() {
         Log.i(TAG, "VPN interface rebuilt")
     }
 
-    /** Establish a VPN interface for the MSST ranges and hand it to Core.
+    /** Establish a VPN interface for the MSST-Net ranges and hand it to Core.
      *  Apps the user excluded (settings) bypass it. */
     private fun attachNewTun(): String? {
         val pfd: ParcelFileDescriptor = Builder()

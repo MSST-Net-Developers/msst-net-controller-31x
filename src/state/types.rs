@@ -88,7 +88,7 @@ pub struct HealthState {
     pub peer_count: Option<u64>,
     pub rule_count: Option<u64>,
     pub ping_enabled: Option<bool>,
-    /// Core needs MSST access authentication (protocol 0.3; `None` from
+    /// Core needs MSST-Net access authentication (protocol 0.3; `None` from
     /// older Cores).
     pub access_auth_required: Option<bool>,
     /// This connection's permission tier, `"viewer"` (queries only) or
@@ -155,12 +155,13 @@ pub struct RoomState {
     pub network_warnings: Vec<NetworkWarning>,
 }
 
-/// Something on Core's host that keeps MSST traffic off the MSST interface
+/// Something on Core's host that keeps MSST-Net traffic off the MSST-Net
+/// interface
 /// (another VPN, a Docker network, …), as Core reports it.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct NetworkWarning {
-    /// `route_conflict` (another interface's `route` lies inside the MSST
+    /// `route_conflict` (another interface's `route` lies inside the MSST-Net
     /// `range`) or `route_hijacked` (traffic to `range` leaves through
     /// `interface`).  Kept as text: an unknown kind is still shown.
     pub kind: String,
@@ -277,7 +278,7 @@ pub struct SystemState {
     pub acl_rules: Vec<AclRule>,
     pub acl_groups: Vec<AclGroup>,
     pub pending_auth: Vec<PendingAuthRequest>,
-    /// Core needs MSST access authentication.  Source of truth is
+    /// Core needs MSST-Net access authentication.  Source of truth is
     /// `Health.access_auth_required` (protocol 0.3); with older Cores it is
     /// set by the `AccessAuthRequired` event and cleared once `Health`
     /// reports a valid authentication.

@@ -59,7 +59,7 @@ import com.msst.net.ui.theme.Radius
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-// ── MSST access authentication (OIDC device flow) ────────────────────────────
+// ── MSST-Net access authentication (OIDC device flow) ────────────────────────
 
 @Composable
 fun OidcDialog(onClose: () -> Unit) {

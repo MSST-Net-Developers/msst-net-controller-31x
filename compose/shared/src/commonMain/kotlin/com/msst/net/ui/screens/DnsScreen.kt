@@ -1,7 +1,7 @@
 package com.msst.net.ui.screens
 
 // .msst.net namespace management (3.0.x).  Core forwards these requests to
-// the coordinator with the user's token, so MSST access authentication is
+// the coordinator with the user's token, so MSST-Net access authentication is
 // required.
 
 import androidx.compose.foundation.background

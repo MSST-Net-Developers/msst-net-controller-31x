@@ -187,13 +187,13 @@ data class RoomState(
     val inRoom get() = !roomId.isNullOrEmpty()
 }
 
-/** Something on Core's host that keeps MSST traffic off the MSST interface
+/** Something on Core's host that keeps MSST-Net traffic off the MSST-Net interface
  *  (another VPN, a Docker network, …). */
 @Serializable
 data class NetworkWarning(
     /** `route_conflict` or `route_hijacked`; an unknown kind is still shown. */
     val kind: String = "",
-    /** The MSST range concerned. */
+    /** The MSST-Net range concerned. */
     val range: String = "",
     /** The other interface. */
     val `interface`: String = "",

@@ -110,7 +110,7 @@ fun HomeScreen() {
 }
 
 /** Host routing problems Core reported (another VPN or network on the
- *  MSST ranges), in room and LAN mode alike. */
+ *  MSST-Net ranges), in room and LAN mode alike. */
 @Composable
 private fun NetworkWarningsBar(warnings: List<NetworkWarning>) {
     val c = Msst.colors

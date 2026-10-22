@@ -14,7 +14,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * MSST access authentication (OIDC device flow, 3.0.x "接入认证").  Success
+ * MSST-Net access authentication (OIDC device flow, 3.0.x "接入认证").  Success
  * is only shown once Core's Health reports a valid authentication — a
  * finished poll means Core stored *a* result, not that it is valid.
  */
