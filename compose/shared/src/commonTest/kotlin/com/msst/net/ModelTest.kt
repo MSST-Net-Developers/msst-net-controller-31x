@@ -59,6 +59,8 @@ class ModelTest {
 
         assertEquals(false, ControllerJson.decodeFromString(NetSettings.serializer(), """{"bypass_other_vpns":false}""").bypassOtherVpns)
         assertNull(ControllerJson.decodeFromString(NetSettings.serializer(), """{"disable_p2p":true}""").bypassOtherVpns, "older Core: no switch")
+        assertEquals(true, ControllerJson.decodeFromString(NetSettings.serializer(), """{"block_other_vpns_over_msst":true}""").blockOtherVpnsOverMsst)
+        assertNull(ControllerJson.decodeFromString(NetSettings.serializer(), """{"bypass_other_vpns":true}""").blockOtherVpnsOverMsst)
     }
 
     @Test

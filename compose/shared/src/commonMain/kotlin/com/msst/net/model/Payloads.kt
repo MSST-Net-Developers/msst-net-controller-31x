@@ -25,6 +25,9 @@ data class NetSettings(
     /** Linux: Core's own traffic bypasses other VPNs' full tunnels; null
      *  from Cores without the setting. */
     @SerialName("bypass_other_vpns") val bypassOtherVpns: Boolean? = null,
+    /** Linux: other VPNs (Tailscale) may not use MSST as their path; null
+     *  from Cores without the setting. */
+    @SerialName("block_other_vpns_over_msst") val blockOtherVpnsOverMsst: Boolean? = null,
 )
 
 @Serializable

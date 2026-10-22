@@ -159,6 +159,10 @@ Core (see its `docs/IPC_PROTOCOL_0.4.md`) added two fields:
   default `true`, Linux, applies immediately) — Core's own traffic (peers,
   relays, Coordinator) bypasses other VPNs' full tunnels.  Shown as a
   switch under 设置 → 网络传输; hidden when Core doesn't report the field.
+- `GetNetSettings` / `SetNetSettings`: `block_other_vpns_over_msst`
+  (boolean, default `true`, Linux, applies immediately; Core 3.1.4) —
+  Tailscale's own traffic may not use MSST as its path.  A second switch
+  next to the first, hidden likewise.
 - `GetSystemState.network_warnings`: `[{kind, range, interface, route}]`
   with `kind` `route_conflict` or `route_hijacked`.  Shown as a warning
   bar on the home screen (room and LAN mode).  Kept in the room view

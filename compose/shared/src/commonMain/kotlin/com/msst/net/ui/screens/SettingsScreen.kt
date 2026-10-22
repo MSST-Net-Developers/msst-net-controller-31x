@@ -509,6 +509,14 @@ private fun AdvancedSections(ready: Boolean) {
                         on, { patch("bypass_other_vpns" to it) }, !busy,
                     )
                 }
+                s.blockOtherVpnsOverMsst?.let { on ->
+                    ToggleRow(
+                        "阻止其他 VPN 经 MSST 传输（仅 Linux）",
+                        "Tailscale 会把 MSST 地址当作直连路径，形成隧道套隧道；开启后它改走自己的其他路径。" +
+                            "若 Tailscale 经 MSST 反而更快可关闭。立即生效",
+                        on, { patch("block_other_vpns_over_msst" to it) }, !busy,
+                    )
+                }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 FieldLabel("流量计数（路径切换时自动重置）", Modifier.weight(1f))
