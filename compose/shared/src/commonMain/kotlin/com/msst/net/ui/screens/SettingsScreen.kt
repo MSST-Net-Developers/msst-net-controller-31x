@@ -575,6 +575,7 @@ private fun dropReasonLabel(reason: String) = when (reason) {
     "unverified_sender" -> "发送方未经验证"
     "duplicate" -> "经其他中转重复到达"
     "replay" -> "重放"
+    "rate_limited" -> "超出速率限制"
     else -> reason
 }
 
