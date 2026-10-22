@@ -3,6 +3,7 @@ package com.msst.net
 import com.msst.net.model.ConnectionStatus
 import com.msst.net.model.ControllerJson
 import com.msst.net.model.ControllerView
+import com.msst.net.model.DiagPingResult
 import com.msst.net.model.Health
 import com.msst.net.model.NetSettings
 import com.msst.net.model.PathView
@@ -14,6 +15,7 @@ import com.msst.net.model.AuthDecision
 import com.msst.net.model.Req
 import com.msst.net.model.UiNotice
 import com.msst.net.model.quickDeviceRule
+import com.msst.net.ui.screens.diagPathLabel
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -143,6 +145,19 @@ class ModelTest {
         assertTrue(sd.active)
         assertEquals(3, sd.rxAccepted)
         assertEquals(4, sd.drop["unverified_sender"])
+    }
+
+    @Test
+    fun decodesDiagPingPath() {
+        // Core diagnostics.rs `PingJob`; older Cores send no `path`.
+        val r = ControllerJson.decodeFromString<DiagPingResult>(
+            """{"target_device_id":"d1","results":[160.3,null],"done":true,"path":"relay"}""")
+        assertEquals(listOf(160.3, null), r.results)
+        assertEquals("经中转（WireGuard 隧道内）", diagPathLabel(r.path))
+        assertEquals("P2P 直连", diagPathLabel("direct"))
+        val old = ControllerJson.decodeFromString<DiagPingResult>("""{"target_device_id":"d1","results":[],"done":false}""")
+        assertNull(old.path)
+        assertNull(diagPathLabel(old.path))
     }
 
     @Test

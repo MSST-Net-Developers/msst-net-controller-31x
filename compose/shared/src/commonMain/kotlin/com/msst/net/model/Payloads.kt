@@ -224,5 +224,6 @@ data class ClearRulesResult(val deleted: Int = 0, val failed: List<ClearRulesFai
 @Serializable
 data class DiagPingJob(@SerialName("job_id") val jobId: String)
 
+/** `path`: `"direct"` | `"relay"` — the path measured (null from Core 3.1.4 and older). */
 @Serializable
-data class DiagPingResult(val results: List<Double?> = emptyList(), val done: Boolean = false)
+data class DiagPingResult(val results: List<Double?> = emptyList(), val done: Boolean = false, val path: String? = null)

@@ -604,12 +604,21 @@ private fun NumberOverride(
     }
 }
 
+/** How a diagnostic ping's `path` is shown; null when Core didn't say (older Core). */
+internal fun diagPathLabel(path: String?): String? = when (path) {
+    "direct" -> "P2P 直连"
+    "relay" -> "经中转（WireGuard 隧道内）"
+    null -> null
+    else -> path
+}
+
 @Composable
 private fun DiagPing(peers: List<Pair<String, String>>, ready: Boolean) {
     val ctx = LocalController.current
     val scope = rememberCoroutineScope()
     var target by remember { mutableStateOf("") }
     var results by remember { mutableStateOf(listOf<Double?>()) }
+    var path by remember { mutableStateOf<String?>(null) }
     var running by remember { mutableStateOf(false) }
     var done by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -621,6 +630,7 @@ private fun DiagPing(peers: List<Pair<String, String>>, ready: Boolean) {
         running = true
         done = false
         results = emptyList()
+        path = null
         error = null
         job = scope.launch {
             val started = attempt { ctx.backend.query<DiagPingJob>(Req.startDiagPing(target.trim())) }
@@ -638,6 +648,7 @@ private fun DiagPing(peers: List<Pair<String, String>>, ready: Boolean) {
                     return@launch
                 }
                 results = p.results
+                path = p.path
                 done = p.done
                 running = !p.done
                 if (p.done) break
@@ -659,6 +670,7 @@ private fun DiagPing(peers: List<Pair<String, String>>, ready: Boolean) {
         val rtts = results.filterNotNull()
         val avg = if (rtts.isNotEmpty()) rtts.average() else null
         InfoBlock {
+            diagPathLabel(path)?.let { InfoLine("路径：$it") }
             InfoLine("发送 ${results.size} / 收到 ${rtts.size} / 丢失 ${results.size - rtts.size}" + (avg?.let { " / 平均 RTT ${oneDecimal(it)} ms" } ?: ""))
             InfoLine(results.mapIndexed { i, r -> "#${i + 1}: ${r?.let { "${oneDecimal(it)} ms" } ?: "超时"}" }.joinToString("  "), mono = true)
             if (!done) InfoLine("进行中…", Msst.colors.primary)
