@@ -5,8 +5,7 @@ name: Release
 #
 #   msst-net-webui-<os>-<arch>[.exe]                   WebUI server (6 builds)
 #   msst-net-cli-<os>-<arch>[.exe]                     command-line Controller (6 builds; component
-#                                                     `cli`, docs/INSTALLER_CLI_PROPOSAL.md — left out
-#                                                     of the manifest until the installer knows it)
+#                                                     `cli`, installer 3.1.4+)
 #   msst-net-controller-desktop-linux-<arch>.deb/.rpm/.tar.gz
 #   msst-net-controller-desktop-windows-x86_64.msi
 #   msst-net-controller-desktop-macos-<arch>.dmg
@@ -47,6 +46,8 @@ env:
   IMAGE: abjust/msstnet31x-webui
   # Lowest Core release this Controller works with (manifest `min_core`).
   MIN_CORE: 3.1.0
+  # Lowest installer that reads this manifest (`cli` component: 3.1.4).
+  MIN_INSTALLER: 3.1.4
   PUBLISH: ${{ startsWith(github.ref, 'refs/tags/v') }}
 
 jobs:
@@ -449,7 +450,8 @@ jobs:
         run: |
           set -euo pipefail
           args=(--product controller --dir dist --version "$VERSION"
-                --ipc-protocol "${{ needs.version.outputs.ipc_protocol }}" --min-core "$MIN_CORE")
+                --ipc-protocol "${{ needs.version.outputs.ipc_protocol }}" --min-core "$MIN_CORE"
+                --min-installer "$MIN_INSTALLER")
           if [[ -n "${{ needs.image.outputs.digest }}" ]]; then
             args+=(--image "$IMAGE:$VERSION@${{ needs.image.outputs.digest }}")
           fi

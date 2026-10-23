@@ -132,8 +132,8 @@ Room and relay passwords given as a bare `--password` /
 `--relay-password` are read from the terminal without echo, and asked for
 when Core says one is needed.  Exit status: 0 ok, 1 failed, 2 invalid input / confirmation needed,
 3 Core unreachable or incompatible.  Times are shown in the system time zone.
-Releases carry `msst-net-cli-<os>-<arch>[.exe]`; the installer does not
-install it yet (see `docs/INSTALLER_CLI_PROPOSAL.md`).
+Releases carry `msst-net-cli-<os>-<arch>[.exe]` (manifest component `cli`,
+installer 3.1.4+, `--controller cli`; see `docs/INSTALLER_CLI_PROPOSAL.md`).
 
 ### Android
 

@@ -1,9 +1,9 @@
 # 提案：在部署契约中加入命令行控制器 `msst-net-cli`
 
-状态：**草案**（选项方式与 Windows `PATH` 已确定），待在 `msst-net-installer-31x` 中落实（`docs/DEPLOYMENT_CONTRACT.md`、
-`manifest.rs`、`layout.rs`、`native.rs`）。本仓库的 `release.yml` 已按本草案构建并上传
-`msst-net-cli-*`；在安装器认识 `cli` 组件之前，`release manifest` 会跳过这些文件
-（与 Android APK 相同），已发布的清单和现有安装器不受影响。
+状态：**已落实**——安装器 3.1.4（`msst-net-installer-31x` 的 `docs/DEPLOYMENT_CONTRACT.md`、
+`manifest.rs`、`layout.rs`、`native.rs`）。控制器从 3.1.8 起在 Release 中提供 `msst-net-cli-*`，
+清单列出 `cli` 组件并要求 `min_installer` 3.1.4；更早的安装器无法读取该清单，会在改动任何
+已安装内容之前失败。
 
 ## 背景
 
