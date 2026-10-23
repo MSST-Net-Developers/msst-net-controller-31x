@@ -4,6 +4,7 @@ import com.msst.net.model.ConnectionStatus
 import com.msst.net.model.ControllerJson
 import com.msst.net.model.ControllerView
 import com.msst.net.model.DiagPingResult
+import com.msst.net.model.EndpointInfo
 import com.msst.net.model.Health
 import com.msst.net.model.NetSettings
 import com.msst.net.model.PathView
@@ -49,6 +50,15 @@ class ModelTest {
            "room":{"peers":[],"relay":null,"room_id":null,"room_name":null},
            "sync":{"state":"synced"}}}
     """.trimIndent()
+
+    @Test
+    fun decodesEndpointHistoryTimes() {
+        // Core's `GetEndpoints` shape (msst-net-core-31x src/endpoints.rs).
+        val ep = ControllerJson.decodeFromString(EndpointInfo.serializer(), """
+            {"current":["1.2.3.4:21031"],"history":[{"endpoints":["relay:us1:21031"],"reported_at":1792734879}]}
+        """.trimIndent())
+        assertEquals(1792734879L, ep.history.single().reportedAt)
+    }
 
     @Test
     fun decodesNetworkWarningsAndTheBypassSetting() {

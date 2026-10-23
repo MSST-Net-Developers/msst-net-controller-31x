@@ -8,8 +8,10 @@ src/                 Controller library (IPC client, state sync, notices) — us
   state/             StateStore: the view of Core state, built only from Core queries/events
   notify.rs          debounced change notices for UIs
   ops.rs             multi-request operations (clear rules)
+  cli/               command-line Controller (msst-net-cli): commands, terminal wording
   webui/             WebUI server (3.0.x security model; serves compose/webApp)
   bin/msst-net-webui.rs
+  bin/msst-net-cli.rs
 compose/             Kotlin Multiplatform / Compose Multiplatform Controller (one UI for all variants)
   shared/            common UI, presentation state, model; `jniMain` = JNI backend (Android + desktop)
   androidApp/        Android: Activity, VpnService (embedded Core), notifications
@@ -17,6 +19,7 @@ compose/             Kotlin Multiplatform / Compose Multiplatform Controller (on
   webApp/            WebUI frontend (wasm), talks to msst-net-webui over HTTPS
   rust/              JNI crate `msst_jni`: this library (+ EmbeddedCore with `--features embedded-core`)
 docs/PROTOCOL_PROPOSALS_3.1.md   issues found in Core / protocol (not changed here)
+docs/INSTALLER_CLI_PROPOSAL.md   draft deployment-contract change for msst-net-cli (installer repo)
 ```
 
 ### Variants
@@ -59,6 +62,7 @@ state.
 | Kotlin tests | `cd compose && ./gradlew :shared:jvmTest :shared:testAndroidHostTest` (wasm: `CHROME_BIN=… ./gradlew :shared:wasmJsTest`) |
 | Desktop app | `compose/rust/build-desktop.sh`, then `cd compose && ./gradlew :desktopApp:run`; to ship, `createReleaseDistributable` / `packageReleaseDeb` / `packageReleaseRpm` / `packageReleaseMsi` / `packageReleaseDmg` (on each OS; ProGuard, rules in `desktopApp/proguard-rules.pro`; the MSI upgrade code is fixed so new MSIs upgrade in place) |
 | WebUI | `cd compose && ./gradlew :webApp:wasmJsBrowserDistribution`, then `cargo build --release --features webui --bin msst-net-webui` (the web build is embedded) |
+| CLI | `cargo build --release --bin msst-net-cli` |
 | Android | `compose/rust/build-android.sh` (needs cargo-ndk + NDK), then `cd compose && ./gradlew :androidApp:assembleRelease` (one APK per ABI; `bundleRelease` for an AAB) |
 
 The JNI crate depends on the Core repo by path (`../msst-net-core-31x`), as
@@ -110,6 +114,26 @@ virtual service account would be refused), config in
 service's `Environment` registry value), log in `webui.log` there (rotated at
 5 MB).  The installer registers the service and restricts that directory to
 SYSTEM and Administrators.
+
+### CLI
+
+`msst-net-cli` offers the WebUI's features in a terminal on the device
+running Core (`msst-net-cli --help`): status and `watch`, nodes, rooms,
+rules and permission groups, access log actions, identity, access
+authentication (`login` prints the URL and code), network settings, path /
+relay / traffic / endpoint diagnostics, diagnostic ping, logs, DNS, and
+`raw` for any `IpcRequest`.  Like the WebUI it does not answer interactive
+access requests (`raw` refuses `auth_decision`).  Each command waits until
+the view is synced from Core (`--timeout`), runs, and exits; `--json`
+prints Core's data, `--yes` skips confirmations (without a terminal,
+deletions and all-port rules are refused unless `--yes` is given).  Rules,
+groups, DNS records and access-log entries accept a unique ID prefix.
+Room and relay passwords given as a bare `--password` /
+`--relay-password` are read from the terminal without echo, and asked for
+when Core says one is needed.  Exit status: 0 ok, 1 failed, 2 invalid input / confirmation needed,
+3 Core unreachable or incompatible.  Times are shown in the system time zone.
+Releases carry `msst-net-cli-<os>-<arch>[.exe]`; the installer does not
+install it yet (see `docs/INSTALLER_CLI_PROPOSAL.md`).
 
 ### Android
 

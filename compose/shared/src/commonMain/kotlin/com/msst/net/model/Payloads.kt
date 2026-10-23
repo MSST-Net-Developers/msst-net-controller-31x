@@ -73,8 +73,12 @@ data class TrafficEntry(
 @Serializable
 data class TrafficStats(val peers: List<TrafficEntry> = emptyList())
 
+/** [reportedAt]: Unix seconds the endpoints were reported (Core's `reported_at`). */
 @Serializable
-data class EndpointRecord(val endpoints: List<String> = emptyList(), val timestamp: Long = 0)
+data class EndpointRecord(
+    val endpoints: List<String> = emptyList(),
+    @SerialName("reported_at") val reportedAt: Long = 0,
+)
 
 @Serializable
 data class EndpointInfo(val current: List<String> = emptyList(), val history: List<EndpointRecord> = emptyList())

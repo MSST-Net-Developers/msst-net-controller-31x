@@ -6,6 +6,7 @@ import com.msst.net.model.ControllerView
 import com.msst.net.model.Health
 import com.msst.net.model.NetworkWarning
 import com.msst.net.model.OperationState
+import com.msst.net.model.FirewallRule
 import com.msst.net.model.PermissionGroup
 import com.msst.net.model.ProtocolPort
 import com.msst.net.model.RoomRelay
@@ -28,6 +29,7 @@ import com.msst.net.state.coordinatorActionsAvailable
 import com.msst.net.state.coordinatorUnreachable
 import com.msst.net.state.formatPorts
 import com.msst.net.state.formatPrincipal
+import com.msst.net.state.ruleSummary
 import com.msst.net.state.RESERVED_NAMESPACES
 import com.msst.net.state.normalizeNamespace
 import com.msst.net.state.oneDecimal
@@ -128,6 +130,9 @@ class PresentationTest {
         assertEquals("任意", formatPorts(emptyList()))
         assertEquals("设备: pc.alice (d1), d2", formatPrincipal(PermissionGroup("devices", listOf("d1", "d2")), mapOf("d1" to "pc.alice")))
         assertEquals("房间模式：当前所有房间成员", formatPrincipal(PermissionGroup("space"), emptyMap()))
+        assertEquals("设备: 所有设备 (*)", formatPrincipal(PermissionGroup("devices", listOf("*")), emptyMap()))
+        assertEquals("所有用户不能访问 1 组端口", ruleSummary(FirewallRule("r", PermissionGroup("users", listOf("*")), listOf(ProtocolPort("tcp", 1, 65535)), "deny")))
+        assertEquals("2 台设备可以访问 0 组端口", ruleSummary(FirewallRule("r", PermissionGroup("devices", listOf("d1", "d2")), action = "allow")))
         assertEquals("直连", pathLabel("direct_lan"))
         assertNull(pathLabel(null))
         assertEquals("1.5", oneDecimal(1.46))

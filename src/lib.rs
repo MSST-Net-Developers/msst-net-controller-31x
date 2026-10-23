@@ -4,6 +4,7 @@
 //! and by the binary entry point.
 
 pub mod app;
+pub mod cli;
 pub mod error;
 pub mod ipc;
 pub mod notify;

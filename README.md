@@ -13,6 +13,8 @@ MSST-Net 是面向朋友联机、Minecraft 等游戏和小型可信网络的私�
 | Android | Core 内置在应用中，以 VPN 服务运行 |
 | WebUI | `msst-net-webui`，通过 HTTPS 远程管理一台设备（需设置访问密码），也提供 Docker 镜像 |
 
+另有命令行控制器 `msst-net-cli`（Rust，功能与 WebUI 相同，在运行 Core 的设备上使用，`msst-net-cli --help` 查看用法）。
+
 ## 文档
 
 使用教程、部署说明与常见问题见文档站：**<https://msst-net.msst2031.cn>**

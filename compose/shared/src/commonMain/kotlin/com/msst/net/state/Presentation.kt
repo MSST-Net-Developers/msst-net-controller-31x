@@ -187,19 +187,28 @@ fun formatPort(p: ProtocolPort): String = when {
 fun formatPorts(pp: List<ProtocolPort>): String =
     pp.joinToString(", ") { "${it.proto}/${formatPort(it)}" }.ifEmpty { "任意" }
 
+/** The principal ID Core matches against every device or user (`*`). */
+const val ANY_PRINCIPAL = "*"
+
 /** Sources of a rule; IDs are shown with the mnemonic the rule was created with. */
 fun formatPrincipal(pg: PermissionGroup, mnemonics: Map<String, String>): String {
     if (pg.kind == "space") return "房间模式：当前所有房间成员"
-    val prefix = if (pg.kind == "devices") "设备" else "用户"
-    return "$prefix: " + pg.ids.joinToString(", ") { id -> mnemonics[id]?.let { "$it ($id)" } ?: id }
+    val devices = pg.kind == "devices"
+    val prefix = if (devices) "设备" else "用户"
+    return "$prefix: " + pg.ids.joinToString(", ") { id ->
+        if (id == ANY_PRINCIPAL) (if (devices) "所有设备 (*)" else "所有用户 (*)")
+        else mnemonics[id]?.let { "$it ($id)" } ?: id
+    }
 }
 
 /** "Who → can or cannot → which services" (AGENTS.md §9.1). */
 fun ruleSummary(r: FirewallRule): String {
-    val who = when (r.permissionGroup.kind) {
-        "space" -> "当前房间成员"
-        "devices" -> "${r.permissionGroup.ids.size} 台设备"
-        else -> "${r.permissionGroup.ids.size} 位用户"
+    val pg = r.permissionGroup
+    val who = when {
+        pg.kind == "space" -> "当前房间成员"
+        ANY_PRINCIPAL in pg.ids -> if (pg.kind == "devices") "所有设备" else "所有用户"
+        pg.kind == "devices" -> "${pg.ids.size} 台设备"
+        else -> "${pg.ids.size} 位用户"
     }
     val verb = if (r.action == "allow") "可以访问" else "不能访问"
     return "$who$verb ${r.protocolPorts.size} 组端口"

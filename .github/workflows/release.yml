@@ -4,6 +4,9 @@ name: Release
 # (msst-net-installer-31x docs/DEPLOYMENT_CONTRACT.md):
 #
 #   msst-net-webui-<os>-<arch>[.exe]                   WebUI server (6 builds)
+#   msst-net-cli-<os>-<arch>[.exe]                     command-line Controller (6 builds; component
+#                                                     `cli`, docs/INSTALLER_CLI_PROPOSAL.md — left out
+#                                                     of the manifest until the installer knows it)
 #   msst-net-controller-desktop-linux-<arch>.deb/.rpm/.tar.gz
 #   msst-net-controller-desktop-windows-x86_64.msi
 #   msst-net-controller-desktop-macos-<arch>.dmg
@@ -136,7 +139,7 @@ jobs:
           if-no-files-found: error
 
   webui:
-    name: WebUI (${{ matrix.os }}-${{ matrix.arch }})
+    name: WebUI + CLI (${{ matrix.os }}-${{ matrix.arch }})
     needs: [version, web-frontend]
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -182,18 +185,22 @@ jobs:
           t=${{ matrix.target }}
           echo "CC_${t//-/_}=musl-gcc" >> "$GITHUB_ENV"
       - name: Build
-        run: cargo build --release --locked --features webui --bin msst-net-webui --target ${{ matrix.target }}
+        run: cargo build --release --locked --features webui --bin msst-net-webui --bin msst-net-cli --target ${{ matrix.target }}
       - name: Name per contract
         run: |
           mkdir -p ../dist
-          cp "target/${{ matrix.target }}/release/msst-net-webui${{ matrix.ext }}" \
-             "../dist/msst-net-webui-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}"
+          for bin in msst-net-webui msst-net-cli; do
+            cp "target/${{ matrix.target }}/release/$bin${{ matrix.ext }}" \
+               "../dist/$bin-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}"
+          done
       - name: Self-test (--version)
         if: matrix.native
         run: |
-          out=$("../dist/msst-net-webui-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}" --version)
-          echo "$out"
-          [[ "$out" == *"${{ needs.version.outputs.version }}"* ]]
+          for bin in msst-net-webui msst-net-cli; do
+            out=$("../dist/$bin-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}" --version)
+            echo "$out"
+            [[ "$out" == *"${{ needs.version.outputs.version }}"* ]]
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: dist-webui-${{ matrix.os }}-${{ matrix.arch }}

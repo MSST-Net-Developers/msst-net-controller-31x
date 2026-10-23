@@ -539,7 +539,7 @@ private fun AdvancedSections(ready: Boolean) {
             if (ep == null || ep.current.isEmpty()) InlineNote("（未探测到）") else ep.current.forEach { InfoLine(it, mono = true) }
             if (ep != null && ep.history.isNotEmpty()) {
                 FieldLabel("历史端点")
-                ep.history.forEach { InfoLine("${formatTime(it.timestamp * 1000)}  ${it.endpoints.joinToString(", ")}", mono = true) }
+                ep.history.forEach { InfoLine("${formatTime(it.reportedAt * 1000)}  ${it.endpoints.joinToString(", ")}", mono = true) }
             }
             if (s != null) {
                 FieldLabel("中转保活间隔")
