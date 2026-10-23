@@ -47,9 +47,9 @@ env:
   IMAGE: abjust/msstnet31x-webui
   # Lowest Core release this Controller works with (manifest `min_core`).
   MIN_CORE: 3.1.0
-  # Lowest installer that reads this manifest: `cli` component (3.1.4),
-  # msst-net-controller-<type>-… names (3.1.5).
-  MIN_INSTALLER: 3.1.5
+  # Lowest installer that reads this manifest: `cli` component and
+  # msst-net-controller-<type>-… names (both 3.1.4).
+  MIN_INSTALLER: 3.1.4
   PUBLISH: ${{ startsWith(github.ref, 'refs/tags/v') }}
 
 jobs:
