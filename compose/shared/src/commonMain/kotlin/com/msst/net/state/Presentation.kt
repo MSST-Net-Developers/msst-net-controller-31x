@@ -140,6 +140,29 @@ fun pathLabel(mode: String?): String? = when {
     else -> mode
 }
 
+private val PATH_REASONS = mapOf(
+    "probe" to "发现直连候选，开始探测",
+    "punch" to "协调服务器发起打洞",
+    "upgrade" to "直连探测成功",
+    "switch" to "换到更优的直连端点",
+    "no_pong" to "直连无响应",
+    "loss" to "直连丢包过多",
+    "rtt_spike" to "直连延迟持续升高",
+    "data_stalled" to "直连能 ping 通但数据不通",
+    "probe_failed" to "所有直连候选均无响应",
+    "p2p_disabled" to "已关闭 P2P",
+)
+
+/** Why the path last changed (`PathChanged.reason`), in words; unknown
+ *  reasons (newer Cores) are shown as sent. */
+fun pathReasonLabel(reason: String?): String? = reason?.let { PATH_REASONS[it] ?: it }
+
+/** [pathLabel] with the reason it changed, e.g. `中转（直连无响应）`. */
+fun pathWithReason(mode: String?, reason: String?): String? {
+    val label = pathLabel(mode) ?: return null
+    return pathReasonLabel(reason)?.let { "$label（$it）" } ?: label
+}
+
 fun formatBytes(b: Long): String = when {
     b >= 1_073_741_824 -> "${oneDecimal(b / 1_073_741_824.0)} GB"
     b >= 1_048_576 -> "${oneDecimal(b / 1_048_576.0)} MB"

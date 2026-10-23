@@ -134,12 +134,14 @@ class ModelTest {
               "candidates":[{"addr":"203.0.113.7:21031","rtt_ms":12.5,"loss_rate":0.0,"status":"direct"}],
               "encryption":"encrypted","last_handshake_at":1900000000},
              {"device_id":"d2","chosen":"relay","candidates":[],"encryption":"no_key",
-              "probe_failures":2,"next_probe_at":1900000060}]}""")
+              "probe_failures":2,"next_probe_at":1900000060,"reason":"probe_failed"}]}""")
         assertEquals("encrypted", path.peers[0].encryption)
         assertEquals(1_900_000_000L, path.peers[0].lastHandshakeAt)
         assertEquals(0, path.peers[0].probeFailures)
         assertEquals(2, path.peers[1].probeFailures)
         assertEquals(1_900_000_060L, path.peers[1].nextProbeAt)
+        assertNull(path.peers[0].reason)
+        assertEquals("probe_failed", path.peers[1].reason)
         val relays = ControllerJson.decodeFromString<RelayList>("""
             {"relays":[{"addr":"198.51.100.1:7000","pub_key":"k"}],"current":"198.51.100.1:7000","rtt_ms":{},
              "discovery":{"transport":"wireguard","tx_messages":6,"tx_skipped_unsupported":2,"rx_accepted":3,

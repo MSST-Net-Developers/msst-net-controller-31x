@@ -53,6 +53,9 @@ data class PathViewEntry(
     /** Failed probe rounds; no probing before [nextProbeAt] (Unix seconds). */
     @SerialName("probe_failures") val probeFailures: Int = 0,
     @SerialName("next_probe_at") val nextProbeAt: Long? = null,
+    /** Why [chosen] last changed (`PathChanged.reason`); null before the
+     *  first change or from older Cores. */
+    val reason: String? = null,
 )
 
 @Serializable

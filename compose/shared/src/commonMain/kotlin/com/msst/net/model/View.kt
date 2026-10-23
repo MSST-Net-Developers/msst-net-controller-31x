@@ -161,6 +161,8 @@ data class NodeInfo(
     @SerialName("is_authenticated") val isAuthenticated: Boolean = false,
     /** Path mode as last reported by Core; null = not reported. */
     @SerialName("path_mode") val pathMode: String? = null,
+    /** Why the path mode last changed (e.g. `no_pong`); null = not reported. */
+    @SerialName("path_reason") val pathReason: String? = null,
 )
 
 @Serializable

@@ -63,9 +63,10 @@ pub enum StateChange {
 pub enum ResourceData {
     Health(Box<HealthState>),
     Room(RoomState),
-    /// `GetNodes` plus the `chosen` path of each peer from `GetPathView`
-    /// (absent if the path view could not be queried).
-    Nodes { nodes: Vec<NodeInfo>, paths: Option<HashMap<String, String>> },
+    /// `GetNodes` plus the `chosen` path of each peer and why it last
+    /// changed, from `GetPathView` (absent if the path view could not be
+    /// queried).
+    Nodes { nodes: Vec<NodeInfo>, paths: Option<HashMap<String, (String, Option<String>)>> },
     AclRules(Vec<AclRule>),
     AclGroups(Vec<AclGroup>),
     PendingAuth(Vec<PendingAuthRequest>),
@@ -102,7 +103,10 @@ impl ResourceData {
                 .map(|peers| {
                     peers
                         .iter()
-                        .filter_map(|p| Some((p.get("device_id")?.as_str()?.to_string(), p.get("chosen")?.as_str()?.to_string())))
+                        .filter_map(|p| {
+                            let reason = p.get("reason").and_then(Value::as_str).map(str::to_string);
+                            Some((p.get("device_id")?.as_str()?.to_string(), (p.get("chosen")?.as_str()?.to_string(), reason)))
+                        })
                         .collect()
                 })
                 .unwrap_or_default()
@@ -262,10 +266,10 @@ impl StateStore {
                 st.nodes = nodes
                     .into_iter()
                     .map(|mut n| {
-                        n.path_mode = match &paths {
-                            Some(p) => p.get(&n.device_id).cloned(),
+                        (n.path_mode, n.path_reason) = match &paths {
+                            Some(p) => p.get(&n.device_id).map_or((None, None), |(m, r)| (Some(m.clone()), r.clone())),
                             // Path view unavailable: keep the last reported mode.
-                            None => old.get(&n.device_id).and_then(|o| o.path_mode.clone()),
+                            None => old.get(&n.device_id).map_or((None, None), |o| (o.path_mode.clone(), o.path_reason.clone())),
                         };
                         (n.device_id.clone(), n)
                     })
@@ -465,6 +469,7 @@ fn apply_event_to(st: &mut SystemState, event: &IpcEvent, full_events: bool) -> 
                 device_handle: None,
                 is_authenticated: false,
                 path_mode: None,
+                path_reason: None,
             });
             node.ipv4 = Some(ipv4.clone());
             node.ipv6 = Some(ipv6.clone());
@@ -494,13 +499,14 @@ fn apply_event_to(st: &mut SystemState, event: &IpcEvent, full_events: bool) -> 
                 _ => (vec![], vec![Nodes]),
             }
         }
-        IpcEvent::PathChanged { device_id, new_mode, endpoint, .. } => {
+        IpcEvent::PathChanged { device_id, new_mode, endpoint, reason, .. } => {
             if let Some(node) = st.nodes.get_mut(device_id) {
                 // Same form as `GetPathView`'s `chosen` ("direct:ip:port").
                 node.path_mode = Some(match endpoint {
                     Some(ep) if new_mode == "direct" => format!("direct:{ep}"),
                     _ => new_mode.clone(),
                 });
+                node.path_reason = reason.clone();
             }
             (vec![Nodes], vec![])
         }
@@ -703,7 +709,7 @@ mod tests {
             "user_handle": null, "device_handle": null, "is_authenticated": false
         }]});
         let paths = json!({ "peers": [{ "device_id": "device-00000001", "display_name": "Bob",
-                                        "chosen": "relay", "candidates": [] }]});
+                                        "chosen": "relay", "candidates": [], "reason": "no_pong" }]});
         assert!(store.apply_resource(0, ResourceData::nodes(&nodes, Some(&paths)).unwrap()).await);
         assert!(store.apply_resource(0, ResourceData::acl_rules(&core_rules()).unwrap()).await);
         let groups = json!({ "groups": [{ "id": "g1", "name": "friends", "kind": "user", "member_ids": ["usr-1"] }]});
@@ -723,6 +729,7 @@ mod tests {
         assert_eq!(s.room.room_id.as_deref(), Some("space-1"));
         assert_eq!(s.room.peers[0].ipv4.as_deref(), Some("172.22.0.1"));
         assert_eq!(s.nodes["device-00000001"].path_mode.as_deref(), Some("relay"));
+        assert_eq!(s.nodes["device-00000001"].path_reason.as_deref(), Some("no_pong"));
         assert_eq!(s.acl_rules[0].id, "r1");
         // Unknown rule fields are carried through unchanged.
         assert_eq!(s.acl_rules[0].fields["permission_group"]["kind"], "devices");
@@ -794,16 +801,22 @@ mod tests {
                 display_name: Some("D1".into()),
             })
             .await;
-        let path = |old: &str, new: &str, ep: Option<&str>| IpcEvent::PathChanged {
+        let path = |old: &str, new: &str, ep: Option<&str>, reason: Option<&str>| IpcEvent::PathChanged {
             device_id: "d1".into(),
             old_mode: old.into(),
             new_mode: new.into(),
             endpoint: ep.map(Into::into),
+            reason: reason.map(Into::into),
         };
-        store.apply_event(&path("relay", "probing", None)).await;
+        store.apply_event(&path("relay", "probing", None, Some("punch"))).await;
         assert_eq!(store.snapshot().await.nodes["d1"].path_mode.as_deref(), Some("probing"));
-        store.apply_event(&path("probing", "direct", Some("203.0.113.7:21031"))).await;
-        assert_eq!(store.snapshot().await.nodes["d1"].path_mode.as_deref(), Some("direct:203.0.113.7:21031"));
+        assert_eq!(store.snapshot().await.nodes["d1"].path_reason.as_deref(), Some("punch"));
+        store.apply_event(&path("probing", "direct", Some("203.0.113.7:21031"), Some("upgrade"))).await;
+        let n = &store.snapshot().await.nodes["d1"];
+        assert_eq!((n.path_mode.as_deref(), n.path_reason.as_deref()), (Some("direct:203.0.113.7:21031"), Some("upgrade")));
+        // From a Core before 3.1.7: no reason, and no stale one kept.
+        store.apply_event(&path("direct", "relay", None, None)).await;
+        assert_eq!(store.snapshot().await.nodes["d1"].path_reason, None);
         let ev = IpcEvent::EncryptionChanged { device_id: "d1".into(), old_state: "handshaking".into(), new_state: "encrypted".into() };
         assert!(store.apply_event(&ev).await.is_empty());
         store.apply_event(&IpcEvent::NodeRemoved { device_id: "d1".into() }).await;

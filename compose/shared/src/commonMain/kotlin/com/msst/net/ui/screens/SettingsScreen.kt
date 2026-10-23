@@ -53,6 +53,7 @@ import com.msst.net.state.discoveryStatsLine
 import com.msst.net.state.coreReady
 import com.msst.net.state.displayNameProblem
 import com.msst.net.state.encryptionLabel
+import com.msst.net.state.pathReasonLabel
 import com.msst.net.state.errorMessage
 import com.msst.net.state.formatBytes
 import com.msst.net.state.oneDecimal
@@ -472,6 +473,7 @@ private fun AdvancedSections(ready: Boolean) {
                 InfoBlock {
                     InfoLine(e.displayName?.let { "$it (${e.deviceId})" } ?: e.deviceId, mono = true)
                     InfoLine("选中: ${e.chosen}", c.textPrimary)
+                    pathReasonLabel(e.reason)?.let { InfoLine("最近一次切换原因: $it", c.textSecondary) }
                     encryptionLabel(e.encryption)?.let { enc ->
                         InfoLine("加密: $enc" + (e.lastHandshakeAt?.let { "（握手于 ${formatTime(it * 1000)}）" } ?: ""), if (e.encryption == "no_key" || e.encryption == "failed") c.warning else c.textSecondary)
                     }
@@ -540,7 +542,8 @@ private fun AdvancedSections(ready: Boolean) {
                 ep.history.forEach { InfoLine("${formatTime(it.timestamp * 1000)}  ${it.endpoints.joinToString(", ")}", mono = true) }
             }
             if (s != null) {
-                FieldLabel("保活间隔（P2P + 中转均生效）")
+                FieldLabel("中转保活间隔")
+                InlineNote("直连的存活探测固定为每秒一次，不受此设置影响")
                 NumberOverride(s.keepaliveSecs, "5–30 秒", 5..30, "保活间隔应为 5–30 秒之间的整数", "自动 (25 s)", busy,
                     onAuto = { patch("keepalive_secs" to null) }, onApply = { patch("keepalive_secs" to it) }, onError = { settingsError = it })
             }

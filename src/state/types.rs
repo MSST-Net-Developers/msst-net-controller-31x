@@ -134,6 +134,11 @@ pub struct NodeInfo {
     /// `PathChanged` event).  `None` = Core has not reported one.
     #[serde(default)]
     pub path_mode: Option<String>,
+    /// Why the path mode last changed (`reason` of `PathChanged` /
+    /// `GetPathView`, e.g. `no_pong`).  `None` = not reported (no change
+    /// yet, or a Core before 3.1.7).
+    #[serde(default)]
+    pub path_reason: Option<String>,
 }
 
 // ── Room ─────────────────────────────────────────────────────────────────────

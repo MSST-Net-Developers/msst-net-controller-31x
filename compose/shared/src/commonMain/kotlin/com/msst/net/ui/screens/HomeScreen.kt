@@ -53,7 +53,7 @@ import com.msst.net.state.deviceMnemonic
 import com.msst.net.state.discoveryNote
 import com.msst.net.state.errorMessage
 import com.msst.net.state.networkWarningLabel
-import com.msst.net.state.pathLabel
+import com.msst.net.state.pathWithReason
 import com.msst.net.state.roomRelayLabel
 import com.msst.net.state.userMnemonic
 import androidx.compose.material3.DropdownMenu
@@ -155,7 +155,7 @@ private fun RoomView(view: ControllerView) {
             ) {
                 items(room.peers, key = { it.deviceId }) { peer ->
                     val self = peer.deviceId == selfId
-                    PeerCard(peer, self, if (self) null else pathLabel(view.state.nodes[peer.deviceId]?.pathMode), view.connected)
+                    PeerCard(peer, self, if (self) null else view.state.nodes[peer.deviceId]?.let { pathWithReason(it.pathMode, it.pathReason) }, view.connected)
                 }
             }
         }

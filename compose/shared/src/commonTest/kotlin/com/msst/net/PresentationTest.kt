@@ -33,6 +33,8 @@ import com.msst.net.state.normalizeNamespace
 import com.msst.net.state.oneDecimal
 import com.msst.net.state.operationStage
 import com.msst.net.state.pathLabel
+import com.msst.net.state.pathReasonLabel
+import com.msst.net.state.pathWithReason
 import com.msst.net.state.networkWarningLabel
 import com.msst.net.state.roomRelayLabel
 import com.msst.net.state.validHandle
@@ -169,6 +171,12 @@ class PresentationTest {
         assertEquals("中转", pathLabel("relay"))
         assertEquals("探测直连中", pathLabel("probing"))
         assertEquals("直连", pathLabel("direct:203.0.113.7:21031"))
+        assertEquals("中转（直连无响应）", pathWithReason("relay", "no_pong"))
+        assertEquals("直连（直连探测成功）", pathWithReason("direct:203.0.113.7:21031", "upgrade"))
+        assertEquals("中转", pathWithReason("relay", null))
+        assertNull(pathWithReason(null, "no_pong"))
+        // A reason from a newer Core is shown as sent.
+        assertEquals("future_reason", pathReasonLabel("future_reason"))
         assertEquals("已加密", encryptionLabel("encrypted"))
         assertEquals("空闲（有通信时自动建立）", encryptionLabel("unknown"))
         assertEquals("无公钥（无法通信）", encryptionLabel("no_key"))
