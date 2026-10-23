@@ -1,11 +1,12 @@
 name: Release
 
 # Builds the Controller release as the 3.1.x deployment contract defines it
-# (msst-net-installer-31x docs/DEPLOYMENT_CONTRACT.md):
+# (msst-net-installer-31x docs/DEPLOYMENT_CONTRACT.md).  Every file is named
+# msst-net-controller-<type>-…, type ∈ webui, cli, desktop, android:
 #
-#   msst-net-webui-<os>-<arch>[.exe]                   WebUI server (6 builds)
-#   msst-net-cli-<os>-<arch>[.exe]                     command-line Controller (6 builds; component
-#                                                     `cli`, installer 3.1.4+)
+#   msst-net-controller-webui-<os>-<arch>[.exe]        WebUI server (6 builds; runs as msst-net-webui)
+#   msst-net-controller-cli-<os>-<arch>[.exe]          command-line Controller (6 builds; runs as
+#                                                     msst-net-cli)
 #   msst-net-controller-desktop-linux-<arch>.deb/.rpm/.tar.gz
 #   msst-net-controller-desktop-windows-x86_64.msi
 #   msst-net-controller-desktop-macos-<arch>.dmg
@@ -46,8 +47,9 @@ env:
   IMAGE: abjust/msstnet31x-webui
   # Lowest Core release this Controller works with (manifest `min_core`).
   MIN_CORE: 3.1.0
-  # Lowest installer that reads this manifest (`cli` component: 3.1.4).
-  MIN_INSTALLER: 3.1.4
+  # Lowest installer that reads this manifest: `cli` component (3.1.4),
+  # msst-net-controller-<type>-… names (3.1.5).
+  MIN_INSTALLER: 3.1.5
   PUBLISH: ${{ startsWith(github.ref, 'refs/tags/v') }}
 
 jobs:
@@ -187,24 +189,26 @@ jobs:
           echo "CC_${t//-/_}=musl-gcc" >> "$GITHUB_ENV"
       - name: Build
         run: cargo build --release --locked --features webui --bin msst-net-webui --bin msst-net-cli --target ${{ matrix.target }}
+      # The executables keep their names (msst-net-webui, msst-net-cli);
+      # only the release files follow msst-net-controller-<type>-….
       - name: Name per contract
         run: |
           mkdir -p ../dist
-          for bin in msst-net-webui msst-net-cli; do
-            cp "target/${{ matrix.target }}/release/$bin${{ matrix.ext }}" \
-               "../dist/$bin-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}"
+          for type in webui cli; do
+            cp "target/${{ matrix.target }}/release/msst-net-$type${{ matrix.ext }}" \
+               "../dist/msst-net-controller-$type-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}"
           done
       - name: Self-test (--version)
         if: matrix.native
         run: |
-          for bin in msst-net-webui msst-net-cli; do
-            out=$("../dist/$bin-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}" --version)
+          for type in webui cli; do
+            out=$("../dist/msst-net-controller-$type-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}" --version)
             echo "$out"
             [[ "$out" == *"${{ needs.version.outputs.version }}"* ]]
           done
       - uses: actions/upload-artifact@v4
         with:
-          name: dist-webui-${{ matrix.os }}-${{ matrix.arch }}
+          name: dist-webui-cli-${{ matrix.os }}-${{ matrix.arch }}
           path: dist/*
           if-no-files-found: error
 
@@ -377,14 +381,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          pattern: dist-webui-linux-*
+          pattern: dist-webui-cli-linux-*
           merge-multiple: true
           path: dist
       - name: Context (bin/<docker arch>/msst-net-webui)
         run: |
           mkdir -p ctx/bin/amd64 ctx/bin/arm64
-          cp dist/msst-net-webui-linux-x86_64 ctx/bin/amd64/msst-net-webui
-          cp dist/msst-net-webui-linux-aarch64 ctx/bin/arm64/msst-net-webui
+          cp dist/msst-net-controller-webui-linux-x86_64 ctx/bin/amd64/msst-net-webui
+          cp dist/msst-net-controller-webui-linux-aarch64 ctx/bin/arm64/msst-net-webui
           cp compose/shared/src/commonMain/composeResources/files/THIRD_PARTY_LICENSES.txt ctx/
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3

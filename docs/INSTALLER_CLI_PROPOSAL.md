@@ -5,6 +5,9 @@
 清单列出 `cli` 组件并要求 `min_installer` 3.1.4；更早的安装器无法读取该清单，会在改动任何
 已安装内容之前失败。
 
+> 文件名后来统一为 `msst-net-controller-cli-<os>-<arch>[.exe]`，见
+> `docs/INSTALLER_NAMING_PROPOSAL.md`；下文保留 3.1.8 时的写法。
+
 ## 背景
 
 契约 §1 写道“3.0.x 的 CLI 控制器在 3.1 中没有对应的交互式程序，因此不再提供”。

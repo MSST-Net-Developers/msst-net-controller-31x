@@ -19,7 +19,8 @@ compose/             Kotlin Multiplatform / Compose Multiplatform Controller (on
   webApp/            WebUI frontend (wasm), talks to msst-net-webui over HTTPS
   rust/              JNI crate `msst_jni`: this library (+ EmbeddedCore with `--features embedded-core`)
 docs/PROTOCOL_PROPOSALS_3.1.md   issues found in Core / protocol (not changed here)
-docs/INSTALLER_CLI_PROPOSAL.md   draft deployment-contract change for msst-net-cli (installer repo)
+docs/INSTALLER_CLI_PROPOSAL.md   deployment-contract change for msst-net-cli (installer 3.1.4)
+docs/INSTALLER_NAMING_PROPOSAL.md   release files named msst-net-controller-<type>-… (installer change)
 ```
 
 ### Variants
@@ -132,8 +133,8 @@ Room and relay passwords given as a bare `--password` /
 `--relay-password` are read from the terminal without echo, and asked for
 when Core says one is needed.  Exit status: 0 ok, 1 failed, 2 invalid input / confirmation needed,
 3 Core unreachable or incompatible.  Times are shown in the system time zone.
-Releases carry `msst-net-cli-<os>-<arch>[.exe]` (manifest component `cli`,
-installer 3.1.4+, `--controller cli`; see `docs/INSTALLER_CLI_PROPOSAL.md`).
+Releases carry `msst-net-controller-cli-<os>-<arch>[.exe]` (manifest
+component `cli`, `--controller cli`; see `docs/INSTALLER_CLI_PROPOSAL.md`).
 
 ### Android
 
