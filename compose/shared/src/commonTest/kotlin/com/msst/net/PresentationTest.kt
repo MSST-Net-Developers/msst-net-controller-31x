@@ -28,6 +28,7 @@ import com.msst.net.state.coordinatorActionsAvailable
 import com.msst.net.state.coordinatorUnreachable
 import com.msst.net.state.formatPorts
 import com.msst.net.state.formatPrincipal
+import com.msst.net.state.RESERVED_NAMESPACES
 import com.msst.net.state.normalizeNamespace
 import com.msst.net.state.oneDecimal
 import com.msst.net.state.operationStage
@@ -145,8 +146,11 @@ class PresentationTest {
         assertFalse(coversAllPorts("80"))
         assertTrue(validHandle("alice-laptop2"))
         assertFalse(validHandle("Alice"))
-        assertEquals("abjust", normalizeNamespace(" ABjust.msst.net "))
+        assertEquals("abjust", normalizeNamespace(" ABjust.net.msst2031.cn "))
+        assertNull(normalizeNamespace("abjust.msst.net"))
         assertNull(normalizeNamespace("-bad"))
+        assertNull(normalizeNamespace("a".repeat(64)))
+        assertTrue("srv" in RESERVED_NAMESPACES && "ezplay" in RESERVED_NAMESPACES)
     }
 
     @Test

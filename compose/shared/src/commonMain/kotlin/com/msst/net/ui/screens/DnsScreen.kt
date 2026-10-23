@@ -1,6 +1,6 @@
 package com.msst.net.ui.screens
 
-// .msst.net namespace management (3.0.x).  Core forwards these requests to
+// net.msst2031.cn namespace management (3.0.x; .msst.net until 3.1.6).  Core forwards these requests to
 // the coordinator with the user's token, so MSST-Net access authentication is
 // required.
 
@@ -40,6 +40,8 @@ import com.msst.net.platform.query
 import com.msst.net.state.Phase
 import com.msst.net.state.attempt
 import com.msst.net.state.errorMessage
+import com.msst.net.state.MSST_ZONE
+import com.msst.net.state.RESERVED_NAMESPACES
 import com.msst.net.state.normalizeNamespace
 import com.msst.net.ui.LocalCompact
 import com.msst.net.ui.LocalController
@@ -92,8 +94,8 @@ fun DnsScreen() {
         Column(Modifier.widthIn(max = 760.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             val title = @Composable { modifier: Modifier ->
                 Column(modifier) {
-                    Text(".msst.net 命名空间管理", style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge, color = c.textPrimary)
-                    Text("注册命名空间后，可在 *.<namespace>.msst.net 下添加 CNAME / TXT / SRV 记录。", style = MaterialTheme.typography.bodySmall, color = c.textMuted)
+                    Text(".$MSST_ZONE 命名空间管理", style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge, color = c.textPrimary)
+                    Text("注册命名空间后，可在 *.<namespace>.$MSST_ZONE 下添加 CNAME / TXT / SRV 记录。", style = MaterialTheme.typography.bodySmall, color = c.textMuted)
                 }
             }
             if (compact) {
@@ -128,7 +130,7 @@ private fun NamespaceCard(ns: NamespaceRegistration, open: Boolean, onToggle: ()
     val c = Msst.colors
     Card(border = if (open) c.borderPrimary else c.borderLight) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            MonoText("*.${ns.namespace}.msst.net", Modifier.weight(1f))
+            MonoText("*.${ns.namespace}.$MSST_ZONE", Modifier.weight(1f))
             when (ns.status) {
                 "approved" -> Pill("已审批", c.success, c.successLight)
                 "pending" -> Pill("待审核", c.warning, c.warningLight)
@@ -171,7 +173,7 @@ private fun RecordsPanel(ns: String) {
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("DNS 记录 — *.$ns.msst.net", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold), color = c.textSecondary)
+            Text("DNS 记录 — *.$ns.$MSST_ZONE", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold), color = c.textSecondary)
             LinkButton("添加记录", { editing = null; showForm = true }, MdiIcons.Plus)
         }
         error?.let { InlineError(it) }
@@ -182,7 +184,7 @@ private fun RecordsPanel(ns: String) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Pill(rec.recordType, c.primaryDark, c.primaryLighter)
                     Column(Modifier.weight(1f)) {
-                        MonoText(if (rec.name == "@") "$ns.msst.net" else "${rec.name}.$ns.msst.net", small = true)
+                        MonoText(if (rec.name == "@") "$ns.$MSST_ZONE" else "${rec.name}.$ns.$MSST_ZONE", small = true)
                         MonoText(rec.content, color = c.textSecondary, small = true)
                     }
                     Text("TTL ${rec.ttl}", style = MaterialTheme.typography.labelSmall, color = c.textMuted)
@@ -228,7 +230,12 @@ private fun RegisterDialog(onClose: () -> Unit, onDone: () -> Unit) {
                 val name = normalizeNamespace(ns)
                 if (name == null) {
                     phase = Phase.Error
-                    error = "命名空间只能包含小写字母、数字和连字符，且不能以连字符开头或结尾"
+                    error = "命名空间只能包含小写字母、数字和连字符，不能以连字符开头或结尾，最长 63 个字符"
+                    return@PrimaryButton
+                }
+                if (name in RESERVED_NAMESPACES) {
+                    phase = Phase.Error
+                    error = "“$name”是保留名称，请换一个"
                     return@PrimaryButton
                 }
                 phase = Phase.Submitting
@@ -246,7 +253,7 @@ private fun RegisterDialog(onClose: () -> Unit, onDone: () -> Unit) {
         } else {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextInput(ns, { ns = it }, Modifier.weight(1f), label = "命名空间", placeholder = "如 abjust", enabled = !busy, mono = true)
-                Text(".msst.net", Modifier.padding(start = 6.dp), style = MaterialTheme.typography.bodySmall, color = Msst.colors.textMuted)
+                Text(".$MSST_ZONE", Modifier.padding(start = 6.dp), style = MaterialTheme.typography.bodySmall, color = Msst.colors.textMuted)
             }
             TextInput(reason, { reason = it }, Modifier.fillMaxWidth(), label = "申请理由（必填）", placeholder = "请说明命名空间的用途和必要性",
                 enabled = !busy, singleLine = false, minLines = 3)
@@ -308,7 +315,7 @@ private fun RecordDialog(ns: String, editing: DnsRecord?, onClose: () -> Unit, o
             PrimaryButton(if (busy) "保存中…" else if (editing != null) "保存" else "添加", ::submit, busy = busy)
         }
     }) {
-        InlineNote("命名空间：*.$ns.msst.net")
+        InlineNote("命名空间：*.$ns.$MSST_ZONE")
         if (phase == Phase.Success) {
             SuccessFeedback(if (editing != null) "已更新" else "已添加")
             return@Modal
@@ -322,7 +329,7 @@ private fun RecordDialog(ns: String, editing: DnsRecord?, onClose: () -> Unit, o
             TextInput(name, { name = it }, Modifier.fillMaxWidth(), label = "子域名（如 myapp、api、www）", placeholder = "如 myapp", enabled = !busy, mono = true)
         }
         when (type) {
-            "CNAME" -> TextInput(content, { content = it }, Modifier.fillMaxWidth(), label = "目标（ezPlay 主机名）", placeholder = "device.user.ezplay.msst.net", enabled = !busy, mono = true)
+            "CNAME" -> TextInput(content, { content = it }, Modifier.fillMaxWidth(), label = "目标（ezPlay 主机名）", placeholder = "device.user.ezplay.$MSST_ZONE", enabled = !busy, mono = true)
             "TXT" -> TextInput(content, { content = it }, Modifier.fillMaxWidth(), label = "文本内容", placeholder = "v=spf1 include:...", enabled = !busy)
             else -> {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -330,7 +337,7 @@ private fun RecordDialog(ns: String, editing: DnsRecord?, onClose: () -> Unit, o
                     TextInput(weight, { weight = it.filter(Char::isDigit) }, Modifier.weight(1f), label = "权重", enabled = !busy, number = true)
                     TextInput(port, { port = it.filter(Char::isDigit) }, Modifier.weight(1f), label = "端口", enabled = !busy, number = true)
                 }
-                TextInput(target, { target = it }, Modifier.fillMaxWidth(), label = "目标主机（ezPlay 主机名）", placeholder = "device.user.ezplay.msst.net", enabled = !busy, mono = true)
+                TextInput(target, { target = it }, Modifier.fillMaxWidth(), label = "目标主机（ezPlay 主机名）", placeholder = "device.user.ezplay.$MSST_ZONE", enabled = !busy, mono = true)
             }
         }
         TextInput(ttl, { ttl = it.filter(Char::isDigit) }, Modifier.width(200.dp), label = "TTL（秒，默认 300）", enabled = !busy, number = true)

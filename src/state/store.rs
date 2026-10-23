@@ -615,7 +615,7 @@ mod tests {
             "device_id": "device-aabbccdd", "user_id": "usr-11223344",
             "device_handle": "pc", "user_handle": "alice",
             "user_display_name": "Alice", "device_display_name": "Alice PC",
-            "device_hostname": "pc.alice.ezplay.msst.net",
+            "device_hostname": "pc.alice.ezplay.net.msst2031.cn",
             "is_authenticated": true, "auth_expires_at": 1_900_000_000i64,
             "ws_connected": true, "coordinator_state": "Connected", "tun_ready": true,
             "relay": "1.2.3.4:3478", "peer_count": 1, "rule_count": 1, "ping_enabled": false,

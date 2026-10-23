@@ -43,6 +43,7 @@ import com.msst.net.model.RoomPeer
 import com.msst.net.model.RoomRelay
 import com.msst.net.platform.VpnControl
 import com.msst.net.state.CoreStatus
+import com.msst.net.state.MSST_ZONE
 import com.msst.net.state.attempt
 import com.msst.net.state.coreStatus
 import com.msst.net.state.coreStatusLabel
@@ -361,7 +362,7 @@ private fun ModePage(view: ControllerView?) {
                         Label("作为服务器")
                         val host = health.deviceHostname
                         if (host != null) IdRow(null, host)
-                        else Pending("ezPlay 主机名（.ezplay.msst.net）将在首次成功连接协调服务器后自动分配")
+                        else Pending("ezPlay 主机名（.ezplay.$MSST_ZONE）将在首次成功连接协调服务器后自动分配")
                     }
                 }
 

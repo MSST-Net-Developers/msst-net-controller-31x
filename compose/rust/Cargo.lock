@@ -1355,7 +1355,7 @@ dependencies = [
 
 [[package]]
 name = "msst-acl-engine"
-version = "3.1.6"
+version = "3.1.7"
 dependencies = [
  "serde",
  "serde_json",
@@ -1363,7 +1363,7 @@ dependencies = [
 
 [[package]]
 name = "msst-core-state"
-version = "3.1.6"
+version = "3.1.7"
 dependencies = [
  "base64 0.22.1",
  "boringtun",
@@ -1378,7 +1378,7 @@ dependencies = [
 
 [[package]]
 name = "msst-ipc-protocol"
-version = "3.1.6"
+version = "3.1.7"
 dependencies = [
  "serde",
  "serde_json",
@@ -1387,7 +1387,7 @@ dependencies = [
 
 [[package]]
 name = "msst-jni"
-version = "3.1.6"
+version = "3.1.7"
 dependencies = [
  "jni",
  "ksni",
@@ -1402,7 +1402,7 @@ dependencies = [
 
 [[package]]
 name = "msst-net-controller"
-version = "3.1.6"
+version = "3.1.7"
 dependencies = [
  "clap",
  "msst-ipc-protocol",
@@ -1416,7 +1416,7 @@ dependencies = [
 
 [[package]]
 name = "msst-net-core"
-version = "3.1.6"
+version = "3.1.7"
 dependencies = [
  "anyhow",
  "argon2",

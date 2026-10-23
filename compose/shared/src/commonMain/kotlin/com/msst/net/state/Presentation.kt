@@ -225,10 +225,22 @@ fun encryptionLabel(state: String?): String? = when (state) {
     else -> state
 }
 
-/** A `.msst.net` namespace label (3.0.x rule). */
+/** MSST-Net's internal DNS zone (3.1.7; `msst.net` before). */
+const val MSST_ZONE = "net.msst2031.cn"
+
+/**
+ * Namespace labels the coordinator refuses (its `zone.go` is authoritative;
+ * this copy only gives early feedback): the official (`srv`) and ezPlay
+ * sub-zones and names that would pass for official ones.
+ */
+val RESERVED_NAMESPACES = setOf(
+    "srv", "ezplay", "serv", "msst", "msst-net", "official", "admin", "coord", "relay", "www", "api", "ns", "dns",
+)
+
+/** A namespace label under [MSST_ZONE] (one label: a-z, 0-9, `-`), or null. */
 fun normalizeNamespace(input: String): String? {
-    val ns = input.trim().lowercase().removeSuffix(".msst.net")
-    return ns.takeIf { Regex("^[a-z0-9]([a-z0-9-]*[a-z0-9])?$").matches(it) }
+    val ns = input.trim().lowercase().removeSuffix(".$MSST_ZONE")
+    return ns.takeIf { it.length <= 63 && Regex("^[a-z0-9]([a-z0-9-]*[a-z0-9])?$").matches(it) }
 }
 
 /** Device and user mnemonics shown for "大内网模式". */
