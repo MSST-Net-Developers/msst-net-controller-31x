@@ -1437,7 +1437,7 @@ dependencies = [
 
 [[package]]
 name = "msst-jni"
-version = "3.1.7"
+version = "3.1.8"
 dependencies = [
  "jni",
  "ksni",
@@ -1452,7 +1452,7 @@ dependencies = [
 
 [[package]]
 name = "msst-net-controller"
-version = "3.1.7"
+version = "3.1.8"
 dependencies = [
  "chrono",
  "clap",
