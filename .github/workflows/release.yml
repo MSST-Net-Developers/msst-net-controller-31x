@@ -187,6 +187,8 @@ jobs:
           sudo apt-get update && sudo apt-get install -y --no-install-recommends musl-tools
           t=${{ matrix.target }}
           echo "CC_${t//-/_}=musl-gcc" >> "$GITHUB_ENV"
+      - name: Lock Core's crates at the checked-out Core
+        run: scripts/sync-core-lock.sh .
       - name: Build
         run: cargo build --release --locked --features webui --bin msst-net-webui --bin msst-net-cli --target ${{ matrix.target }}
       # The executables keep their names (msst-net-webui, msst-net-cli);

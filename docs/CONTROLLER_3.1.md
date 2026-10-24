@@ -67,7 +67,10 @@ state.
 | Android | `compose/rust/build-android.sh` (needs cargo-ndk + NDK), then `cd compose && ./gradlew :androidApp:assembleRelease` (one APK per ABI; `bundleRelease` for an AAB) |
 
 The JNI crate depends on the Core repo by path (`../msst-net-core-31x`), as
-before.
+before.  Core's crate versions in both `Cargo.lock` files follow Core's
+releases; `scripts/sync-core-lock.sh` updates just those (CI and the
+Docker build run it before building with `--locked`, and print every lock
+change it made).  After a Core release, run it and commit the lock files.
 
 GitHub Actions: `.github/workflows/ci.yml` runs the tests above on every
 push; `release.yml` builds a `v<version>` tag into the release the

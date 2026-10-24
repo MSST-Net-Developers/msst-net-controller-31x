@@ -20,13 +20,15 @@ COPY --from=core Cargo.toml msst-net-core-31x/Cargo.toml
 COPY --from=core crates msst-net-core-31x/crates
 WORKDIR /src/msst-net-controller-31x
 COPY Cargo.toml Cargo.lock build.rs ./
+COPY scripts/sync-core-lock.sh scripts/
 COPY src src
 COPY compose/webApp/build/dist/wasmJs/productionExecutable compose/webApp/build/dist/wasmJs/productionExecutable
 RUN test -f compose/webApp/build/dist/wasmJs/productionExecutable/index.html \
     || { echo "Web frontend missing: run ./gradlew :webApp:wasmJsBrowserDistribution in compose/ first" >&2; exit 1; }
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/msst-net-controller-31x/target \
-    cargo build --release --locked --features webui --bin msst-net-webui \
+    scripts/sync-core-lock.sh . \
+    && cargo build --release --locked --features webui --bin msst-net-webui \
     && cp target/release/msst-net-webui /usr/local/bin/
 
 FROM debian:bookworm-slim
