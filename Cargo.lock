@@ -950,7 +950,7 @@ dependencies = [
 
 [[package]]
 name = "msst-ipc-protocol"
-version = "3.1.8"
+version = "3.1.9"
 dependencies = [
  "serde",
  "serde_json",
@@ -959,7 +959,7 @@ dependencies = [
 
 [[package]]
 name = "msst-net-controller"
-version = "3.1.8"
+version = "3.1.9"
 dependencies = [
  "argon2",
  "axum",
