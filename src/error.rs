@@ -210,6 +210,9 @@ fn core_error_message(code: &str, raw: &str) -> String {
         BUSY => "客户端核心正忙（同时进行的操作过多），请稍后重试。".into(),
         INCOMPATIBLE_VERSION => "客户端核心与控制器的协议版本不兼容，请将两者更新到同一版本。".into(),
         RESPONSE_TOO_LARGE => "要读取的数据超出了单次传输上限，请减少查询的条数后重试。".into(),
+        TEMPORARY_RULE => "临时规则只能查看或删除，不能修改。".into(),
+        GROUP_IN_USE => "该权限组仍被规则引用，请先删除这些规则，或把它们改为其他来源。".into(),
+        CONFLICT => "该对象刚刚被其他操作修改，请查看最新内容后重试。".into(),
         _ => format!("客户端核心返回错误（{code}）。"),
     }
 }

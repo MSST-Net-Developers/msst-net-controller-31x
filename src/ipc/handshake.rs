@@ -50,6 +50,9 @@ pub struct Capabilities {
     pub operations: bool,
     /// `SetLogStream` (protocol 0.4).
     pub log_stream: bool,
+    /// Permanent rules editable in full, rules linked to permission groups,
+    /// `ResolveAclPrincipal` (protocol 0.5).
+    pub acl_edit: bool,
 }
 
 impl Capabilities {
@@ -63,6 +66,7 @@ impl Capabilities {
             event_seq: minor >= 4,
             operations: minor >= 4,
             log_stream: minor >= 4,
+            acl_edit: minor >= 5,
         }
     }
 }
@@ -114,6 +118,8 @@ mod tests {
         assert!(!Capabilities::from_version((0, 1, 0)).get_services);
         assert!(Capabilities::from_version((0, 2, 0)).get_services);
         assert!(Capabilities::from_version((0, 9, 0)).get_services);
+        assert!(!Capabilities::from_version((0, 4, 0)).acl_edit);
+        assert!(Capabilities::from_version((0, 5, 0)).acl_edit);
         let v2 = Capabilities::from_version((0, 2, 0));
         assert!(!v2.clear_acl_rules && !v2.full_events);
         let v3 = Capabilities::from_version((0, 3, 0));

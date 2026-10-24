@@ -111,6 +111,9 @@ data class Capabilities(
     @SerialName("event_seq") val eventSeq: Boolean = false,
     val operations: Boolean = false,
     @SerialName("log_stream") val logStream: Boolean = false,
+    /** Permanent rules editable in full, group-linked rules,
+     *  `resolve_acl_principal` (protocol 0.5). */
+    @SerialName("acl_edit") val aclEdit: Boolean = false,
 )
 
 // ── Core state ───────────────────────────────────────────────────────────────
@@ -239,7 +242,12 @@ data class FirewallRule(
     @SerialName("principal_mnemonics") val principalMnemonics: Map<String, String> = emptyMap(),
     /** The rule still references mnemonics Core could not resolve yet. */
     @SerialName("pending_migration") val pendingMigration: Boolean = false,
-)
+    /** The permission group this rule follows (protocol 0.5). */
+    @SerialName("group_id") val groupId: String? = null,
+) {
+    /** Temporary rules (with an expiry) can only be viewed and deleted. */
+    val isTemporary: Boolean get() = expiresAt != null
+}
 
 /** A permission group (`kind` is `user` or `device`). */
 @Serializable
@@ -248,6 +256,18 @@ data class AclGroup(
     val name: String,
     val kind: String,
     @SerialName("member_ids") val memberIds: List<String> = emptyList(),
+    /** ID → mnemonic the member was entered as (display only; 0.5). */
+    @SerialName("member_mnemonics") val memberMnemonics: Map<String, String> = emptyMap(),
+)
+
+/** Core's `resolve_acl_principal` response: who an ID or mnemonic is. */
+@Serializable
+data class ResolvedPrincipal(
+    val kind: String,
+    val id: String,
+    val mnemonic: String? = null,
+    @SerialName("display_name") val displayName: String? = null,
+    @SerialName("user_display_name") val userDisplayName: String? = null,
 )
 
 @Serializable

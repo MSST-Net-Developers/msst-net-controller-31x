@@ -3,12 +3,15 @@ package com.msst.net.state
 // Pure presentation helpers: how Core's state is described to users.  They
 // only describe what Core reported; nothing here decides networking state.
 
+import com.msst.net.model.AclGroup
 import com.msst.net.model.ConnectionStatus
 import com.msst.net.model.ControllerView
 import com.msst.net.model.FirewallRule
 import com.msst.net.model.NetworkWarning
 import com.msst.net.model.PermissionGroup
 import com.msst.net.model.ProtocolPort
+import com.msst.net.model.ResolvedPrincipal
+import com.msst.net.model.ServiceItem
 import com.msst.net.model.RoomRelay
 import com.msst.net.model.SystemState
 import com.msst.net.platform.DeviceApp
@@ -187,18 +190,68 @@ fun formatPort(p: ProtocolPort): String = when {
 fun formatPorts(pp: List<ProtocolPort>): String =
     pp.joinToString(", ") { "${it.proto}/${formatPort(it)}" }.ifEmpty { "任意" }
 
+/** A rule's ports as Core's catalogue writes them (`tcp/25565`; a full range as `*`). */
+private fun portKeys(pp: List<ProtocolPort>): Set<String> = pp.map { "${it.proto}/${formatPort(it)}" }.toSet()
+
+/** What a rule's ports amount to in terms of Core's service catalogue. */
+sealed interface ServiceMatch {
+    /** Every TCP and UDP port. */
+    data object AllPorts : ServiceMatch
+    /** Exactly these services (IDs), no other port. */
+    data class Services(val ids: List<String>) : ServiceMatch
+}
+
+/** [ports] as services from [catalog] when they are exactly the ports of
+ *  some services (rules store expanded ports, not service names), or
+ *  "all ports"; `null` when they aren't. */
+fun matchServices(ports: List<ProtocolPort>, catalog: List<ServiceItem>): ServiceMatch? {
+    val want = portKeys(ports)
+    if (want.isEmpty()) return null
+    if (want == setOf("tcp/*", "udp/*")) return ServiceMatch.AllPorts
+    val fits = catalog.filter { it.ports.isNotEmpty() && want.containsAll(it.ports) }
+    return if (fits.flatMap { it.ports }.toSet() == want) ServiceMatch.Services(fits.map { it.id }.distinct()) else null
+}
+
+/** A rule's ports for display: services from [catalog] that the rule fully
+ *  covers by name, then the remaining ports. */
+fun formatTargets(ports: List<ProtocolPort>, catalog: List<ServiceItem>): String {
+    val want = portKeys(ports)
+    if (want == setOf("tcp/*", "udp/*")) return "所有协议及端口"
+    val fits = catalog.filter { it.ports.isNotEmpty() && want.containsAll(it.ports) }
+    val covered = fits.flatMap { it.ports }.toSet()
+    val rest = ports.filter { "${it.proto}/${formatPort(it)}" !in covered }
+    return (fits.map { it.name }.distinct() + listOfNotNull(rest.takeIf { it.isNotEmpty() }?.let(::formatPorts)))
+        .joinToString("、").ifEmpty { formatPorts(ports) }
+}
+
 /** The principal ID Core matches against every device or user (`*`). */
 const val ANY_PRINCIPAL = "*"
 
 /** Sources of a rule; IDs are shown with the mnemonic the rule was created with. */
 fun formatPrincipal(pg: PermissionGroup, mnemonics: Map<String, String>): String {
     if (pg.kind == "space") return "房间模式：当前所有房间成员"
+    if (pg.ids.isEmpty()) return (if (pg.kind == "devices") "设备" else "用户") + "：无（不匹配任何来源）"
     val devices = pg.kind == "devices"
     val prefix = if (devices) "设备" else "用户"
     return "$prefix: " + pg.ids.joinToString(", ") { id ->
         if (id == ANY_PRINCIPAL) (if (devices) "所有设备 (*)" else "所有用户 (*)")
         else mnemonics[id]?.let { "$it ($id)" } ?: id
     }
+}
+
+/** Sources of [rule], naming the permission group it follows, if any. */
+fun formatRuleSource(rule: FirewallRule, groups: List<AclGroup>): String {
+    val members = formatPrincipal(rule.permissionGroup, rule.principalMnemonics)
+    val gid = rule.groupId ?: return members
+    val name = groups.firstOrNull { it.id == gid }?.name ?: gid
+    return "权限组「$name」 · $members"
+}
+
+/** How a resolved principal is shown: its name, else its mnemonic or ID. */
+fun principalLabel(p: ResolvedPrincipal): String {
+    if (p.id == ANY_PRINCIPAL) return if (p.kind == "device") "所有设备" else "所有用户"
+    val name = p.displayName ?: p.mnemonic ?: return p.id
+    return if (p.kind == "device" && p.userDisplayName != null) "$name（${p.userDisplayName}）" else name
 }
 
 /** "Who → can or cannot → which services" (AGENTS.md §9.1). */

@@ -1,5 +1,6 @@
 package com.msst.net
 
+import com.msst.net.model.AclGroup
 import com.msst.net.model.ClearRulesResult
 import com.msst.net.model.ControllerView
 import com.msst.net.model.FirewallRule
@@ -7,7 +8,9 @@ import com.msst.net.model.Health
 import com.msst.net.model.IpcRequest
 import com.msst.net.model.PermissionGroup
 import com.msst.net.model.ProtocolPort
+import com.msst.net.model.ResolvedPrincipal
 import com.msst.net.model.RetryOutcome
+import com.msst.net.model.ServiceItem
 import com.msst.net.model.SystemState
 import com.msst.net.model.UiNotice
 import com.msst.net.model.obj
@@ -22,6 +25,11 @@ import com.msst.net.state.RoomMembers
 import com.msst.net.state.RoomCreateState
 import com.msst.net.state.RoomJoinState
 import com.msst.net.state.RoomRelayChoice
+import com.msst.net.state.ServiceMatch
+import com.msst.net.state.formatRuleSource
+import com.msst.net.state.formatTargets
+import com.msst.net.state.matchServices
+import com.msst.net.state.principalLabel
 import com.msst.net.state.relayLinkHasPassword
 import com.msst.net.state.RuleWizardState
 import com.msst.net.state.SourceMode
@@ -222,6 +230,125 @@ class StateTest {
         assertEquals("friends", w.comment)
         w.changeSourceKind("device")
         assertTrue(w.sources.isEmpty(), "sources of one kind only")
+    }
+
+    @Test
+    fun wizardEndsWithASummaryStep() {
+        val w = RuleWizardState(preset = RoomMembers)
+        w.toggleService("ssh", true)
+        assertTrue(w.next())
+        assertEquals(3, w.step)
+        assertTrue(w.next())
+        assertEquals(4, w.step, "the summary comes last")
+        assertTrue(w.next())
+        assertEquals(4, w.step)
+    }
+
+    @Test
+    fun wizardShowsResolvedNamesButSendsWhatWasEntered() {
+        val w = RuleWizardState()
+        w.sourceMode = SourceMode.Manual
+        w.sourceInput = "pc.bob"
+        w.addSource("Bob 的电脑")
+        assertEquals("Bob 的电脑（pc.bob）", w.sourceLabel("pc.bob"))
+        w.sourceInput = "device-0000000c"
+        w.addSource()
+        assertEquals("device-0000000c", w.sourceLabel("device-0000000c"), "no name known: the ID alone")
+        val ids = (w.request()["principals"] as JsonArray).map { (it as JsonObject)["id"]!!.jsonPrimitive.content }
+        assertEquals(listOf("pc.bob", "device-0000000c"), ids)
+    }
+
+    @Test
+    fun editingAGroupLinkedRuleKeepsTheLinkAndPatchesInPlace() {
+        val rule = FirewallRule(
+            id = "r1",
+            permissionGroup = PermissionGroup("users", listOf("user-0000000b")),
+            protocolPorts = listOf(ProtocolPort("tcp", 22, 22)),
+            action = "allow",
+            comment = "ssh",
+            groupId = "g1",
+        )
+        val w = RuleWizardState(editing = rule)
+        assertFalse(w.copied)
+        assertEquals(SourceMode.Group, w.sourceMode)
+        assertEquals("g1", w.groupId)
+        w.action = "deny"
+        w.comment = ""
+        val p = w.patch()
+        assertEquals("g1", p["group_id"]!!.jsonPrimitive.content)
+        assertNull(p["principals"], "group_id and principals are exclusive")
+        assertEquals("deny", p["action"]!!.jsonPrimitive.content)
+        assertEquals("", p["comment"]!!.jsonPrimitive.content, "a cleared comment is sent")
+        assertEquals("22", ((p["protocol_ports"] as JsonArray).single() as JsonObject)["port"]!!.jsonPrimitive.content)
+        assertNull(p["enabled"], "editing leaves enabled as it is")
+        assertNull(p["direction"])
+
+        // A manual rule keeps the mnemonics it was created with as names.
+        val manual = rule.copy(groupId = null, principalMnemonics = mapOf("user-0000000b" to "bob"))
+        val m = RuleWizardState(editing = manual)
+        assertEquals(SourceMode.Manual, m.sourceMode)
+        assertEquals("bob（user-0000000b）", m.sourceLabel("user-0000000b"))
+    }
+
+    private val catalog = listOf(
+        ServiceItem("minecraft-java", "Minecraft（MCJE）", listOf("tcp/25565")),
+        ServiceItem("rdp", "RDP", listOf("tcp/3389")),
+        ServiceItem("rdp-udp", "RDP（UDP）", listOf("udp/3389")),
+        ServiceItem("dns", "DNS", listOf("tcp/53", "udp/53")),
+    )
+
+    @Test
+    fun portsAreMatchedBackToServices() {
+        val mc = ProtocolPort("tcp", 25565, 25565)
+        val rdp = listOf(ProtocolPort("tcp", 3389, 3389), ProtocolPort("udp", 3389, 3389))
+        assertEquals(ServiceMatch.Services(listOf("minecraft-java")), matchServices(listOf(mc), catalog))
+        assertEquals(ServiceMatch.Services(listOf("rdp", "rdp-udp")), matchServices(rdp, catalog))
+        assertNull(matchServices(listOf(ProtocolPort("tcp", 53, 53)), catalog), "half of DNS is not DNS")
+        assertNull(matchServices(listOf(mc, ProtocolPort("tcp", 8080, 8080)), catalog), "an extra port: keep ports")
+        assertEquals(ServiceMatch.AllPorts, matchServices(listOf(ProtocolPort("tcp", 1, 65535), ProtocolPort("udp", 1, 65535)), catalog))
+        assertNull(matchServices(emptyList(), catalog))
+
+        assertEquals("Minecraft（MCJE）、tcp/8080", formatTargets(listOf(mc, ProtocolPort("tcp", 8080, 8080)), catalog))
+        assertEquals("tcp/53", formatTargets(listOf(ProtocolPort("tcp", 53, 53)), catalog))
+        assertEquals("tcp/25565", formatTargets(listOf(mc), emptyList()), "no catalogue: ports")
+    }
+
+    @Test
+    fun editedRuleShowsItsServicesOnceTheCatalogueIsKnown() {
+        val rule = FirewallRule(id = "r", permissionGroup = PermissionGroup("space"), action = "allow",
+            protocolPorts = listOf(ProtocolPort("tcp", 25565, 25565)))
+        val w = RuleWizardState(editing = rule)
+        assertEquals(TargetMode.Ports, w.targetMode)
+        w.useCatalog(catalog.map { it })
+        assertEquals(TargetMode.Services, w.targetMode)
+        assertEquals(setOf("minecraft-java"), w.services)
+        assertEquals("minecraft-java", (w.patch()["services"] as JsonArray).single().jsonPrimitive.content)
+
+        // Ports the user already changed are left alone.
+        val edited = RuleWizardState(editing = rule)
+        edited.portInput = "8080"
+        edited.addPort()
+        edited.useCatalog(catalog)
+        assertEquals(TargetMode.Ports, edited.targetMode)
+
+        val all = RuleWizardState(from = rule.copy(protocolPorts = listOf(ProtocolPort("tcp", 1, 65535), ProtocolPort("udp", 1, 65535))))
+        all.useCatalog(catalog)
+        assertTrue(all.allServices)
+    }
+
+    @Test
+    fun temporaryRulesAndGroupSources() {
+        val rule = FirewallRule(id = "r", permissionGroup = PermissionGroup("users", listOf("user-0000000b")), action = "allow")
+        assertFalse(rule.isTemporary)
+        assertTrue(rule.copy(expiresAt = 1_900_000_000).isTemporary)
+        assertEquals("用户: user-0000000b", formatRuleSource(rule, emptyList()))
+        val linked = rule.copy(groupId = "g1", principalMnemonics = mapOf("user-0000000b" to "bob"))
+        assertEquals("权限组「friends」 · 用户: bob (user-0000000b)", formatRuleSource(linked, listOf(AclGroup("g1", "friends", "user"))))
+        assertEquals("用户：无（不匹配任何来源）", formatRuleSource(rule.copy(permissionGroup = PermissionGroup("users")), emptyList()))
+
+        assertEquals("Carol's NAS（Carol）", principalLabel(ResolvedPrincipal("device", "device-0000000c", "nas.carol", "Carol's NAS", "Carol")))
+        assertEquals("nas.carol", principalLabel(ResolvedPrincipal("device", "device-0000000c", "nas.carol")))
+        assertEquals("所有用户", principalLabel(ResolvedPrincipal("user", "*")))
     }
 
     @Test

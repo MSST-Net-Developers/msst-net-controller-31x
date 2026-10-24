@@ -54,6 +54,8 @@ object Req {
     fun getDnsRecords(domain: String) = q("get_dns_records", "domain" to domain)
     fun getRelays() = q("get_relays")
     fun getServices() = q("get_services")
+    /** [kind]: `device` or `user`; [id]: an ID or mnemonic (0.5). */
+    fun resolveAclPrincipal(kind: String, id: String) = q("resolve_acl_principal", "kind" to kind, "id" to id)
 
     // Commands
     /** [relay]: an official relay's address or a `msst-relay://` link (0.4). */

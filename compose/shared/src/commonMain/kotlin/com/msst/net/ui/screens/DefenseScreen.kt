@@ -20,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -30,9 +31,12 @@ import androidx.compose.ui.unit.dp
 import com.msst.net.model.AccessLog
 import com.msst.net.model.AccessLogEntry
 import com.msst.net.model.AccessReason
+import com.msst.net.model.AclGroup
 import com.msst.net.model.FirewallRule
 import com.msst.net.model.ONCE_TTL_SECS
 import com.msst.net.model.Req
+import com.msst.net.model.ServiceItem
+import com.msst.net.model.ServiceList
 import com.msst.net.model.SystemState
 import com.msst.net.model.obj
 import com.msst.net.model.quickDeviceRule
@@ -43,8 +47,8 @@ import com.msst.net.platform.query
 import com.msst.net.state.attempt
 import com.msst.net.state.deviceName
 import com.msst.net.state.errorMessage
-import com.msst.net.state.formatPorts
-import com.msst.net.state.formatPrincipal
+import com.msst.net.state.formatTargets
+import com.msst.net.state.formatRuleSource
 import com.msst.net.ui.LocalCompact
 import com.msst.net.ui.LocalController
 import com.msst.net.ui.MdiIcons
@@ -59,6 +63,7 @@ import com.msst.net.ui.components.SecondaryButton
 import com.msst.net.ui.components.SmallIconButton
 import com.msst.net.ui.components.Toggle
 import com.msst.net.ui.dialogs.GroupManagerDialog
+import com.msst.net.ui.dialogs.RuleDetailDialog
 import com.msst.net.ui.dialogs.RuleEditDialog
 import com.msst.net.ui.dialogs.RuleWizardDialog
 import com.msst.net.ui.theme.Msst
@@ -81,7 +86,10 @@ fun DefenseScreen() {
     val connected = view?.connected == true
     val health = if (connected) state?.health else null
     val rules = state?.aclRules.orEmpty()
+    val groups = state?.aclGroups.orEmpty()
     val manual = ctx.features.manualRuleCreation
+    // Core 0.5: permanent rules are edited in full with the wizard.
+    val fullEdit = manual && view?.capabilities?.aclEdit == true
     val scope = rememberCoroutineScope()
 
     var showLog by remember { mutableStateOf(false) }
@@ -90,6 +98,14 @@ fun DefenseScreen() {
     var pingBusy by remember { mutableStateOf(false) }
     var busyRules by remember { mutableStateOf(setOf<String>()) }
     var clearing by remember { mutableStateOf(false) }
+
+    // Core's service catalogue, to name the services a rule's ports amount to.
+    var catalog by remember { mutableStateOf(listOf<ServiceItem>()) }
+    val canListServices = view?.capabilities?.getServices == true
+    LaunchedEffect(canListServices) {
+        if (!canListServices || catalog.isNotEmpty()) return@LaunchedEffect
+        attempt { ctx.backend.query<ServiceList>(Req.getServices()) }.onSuccess { catalog = it.categories.flatMap { c -> c.services } }
+    }
 
     // Access log: queried on demand; responses of superseded loads are dropped.
     var log by remember { mutableStateOf(listOf<AccessLogEntry>()) }
@@ -188,6 +204,8 @@ fun DefenseScreen() {
                     items(rules, key = { it.id }) { rule ->
                         RuleCard(
                             rule,
+                            groups,
+                            catalog,
                             busy = rule.id in busyRules || !connected,
                             onToggle = {
                                 withRule(rule.id, if (rule.enabled) "停用规则" else "启用规则") {
@@ -215,11 +233,20 @@ fun DefenseScreen() {
         null -> Unit
         DefenseDialog.Groups -> GroupManagerDialog { dialog = null }
         is DefenseDialog.Wizard -> RuleWizardDialog(d.from) { dialog = null }
-        is DefenseDialog.Edit -> RuleEditDialog(
-            d.rule,
-            onClose = { dialog = null },
-            onCopy = if (manual) ({ dialog = DefenseDialog.Wizard(d.rule) }) else null,
-        )
+        is DefenseDialog.Edit -> when {
+            d.rule.isTemporary -> RuleDetailDialog(
+                d.rule,
+                catalog,
+                onClose = { dialog = null },
+                onCopy = if (manual) ({ dialog = DefenseDialog.Wizard(d.rule) }) else null,
+            )
+            fullEdit -> RuleWizardDialog(null, editing = d.rule) { dialog = null }
+            else -> RuleEditDialog(
+                d.rule,
+                onClose = { dialog = null },
+                onCopy = if (manual) ({ dialog = DefenseDialog.Wizard(d.rule) }) else null,
+            )
+        }
         is DefenseDialog.ConfirmDelete -> ConfirmDialog("删除规则", "确定删除这条规则？", "删除", {
             withRule(d.rule.id, "删除规则") { ctx.backend.request(Req.deleteAclRule(d.rule.id)) }
         }, { dialog = null })
@@ -241,21 +268,29 @@ fun DefenseScreen() {
 }
 
 @Composable
-private fun RuleCard(rule: FirewallRule, busy: Boolean, onToggle: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit) {
+private fun RuleCard(rule: FirewallRule, groups: List<AclGroup>, catalog: List<ServiceItem>, busy: Boolean, onToggle: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit) {
     val c = Msst.colors
+    // Temporary rules can only be viewed and deleted: no switch, no editing.
+    val temporary = rule.isTemporary
+    val toggle = @Composable {
+        if (temporary) Pill("临时", c.warning, c.warningLight) else Toggle(rule.enabled, { onToggle() }, enabled = !busy)
+    }
+    val open = @Composable {
+        if (temporary) SmallIconButton(MdiIcons.EyeOutline, "查看", onEdit) else SmallIconButton(MdiIcons.Pencil, "编辑", onEdit)
+    }
     val details = @Composable { modifier: Modifier ->
         Column(modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (rule.action == "allow") Pill("允许", c.success, c.successLight) else Pill("拒绝", c.error, c.errorLight)
                 Text(
-                    formatPorts(rule.protocolPorts),
+                    formatTargets(rule.protocolPorts, catalog),
                     Modifier.weight(1f),
                     style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
                     color = if (rule.enabled) c.textPrimary else c.textMuted,
                 )
             }
             Text(
-                formatPrincipal(rule.permissionGroup, rule.principalMnemonics),
+                formatRuleSource(rule, groups),
                 style = MaterialTheme.typography.labelSmall,
                 color = if (rule.enabled) c.textSecondary else c.textMuted,
             )
@@ -269,18 +304,23 @@ private fun RuleCard(rule: FirewallRule, busy: Boolean, onToggle: () -> Unit, on
             // Phones: details get the full width; controls in a row below.
             details(Modifier.fillMaxWidth())
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Toggle(rule.enabled, { onToggle() }, enabled = !busy)
+                toggle()
                 Spacer(Modifier.width(8.dp))
-                Text(if (rule.enabled) "已启用" else "已停用", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = c.textMuted)
-                SmallIconButton(MdiIcons.Pencil, "编辑", onEdit)
+                Text(
+                    if (temporary) "到期自动删除" else if (rule.enabled) "已启用" else "已停用",
+                    Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = c.textMuted,
+                )
+                open()
                 SmallIconButton(MdiIcons.TrashCanOutline, "删除", onDelete, enabled = !busy, tint = c.error)
             }
         } else {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Toggle(rule.enabled, { onToggle() }, enabled = !busy)
+                toggle()
                 Spacer(Modifier.width(12.dp))
                 details(Modifier.weight(1f))
-                SmallIconButton(MdiIcons.Pencil, "编辑", onEdit)
+                open()
                 SmallIconButton(MdiIcons.TrashCanOutline, "删除", onDelete, enabled = !busy, tint = c.error)
             }
         }

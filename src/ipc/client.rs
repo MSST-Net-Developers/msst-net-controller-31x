@@ -789,6 +789,7 @@ fn required_minor(req: &IpcRequest) -> Option<u32> {
         IpcRequest::GetServices => Some(2),
         IpcRequest::ClearAclRules => Some(3),
         IpcRequest::GetOperation { .. } | IpcRequest::SetLogStream { .. } => Some(4),
+        IpcRequest::ResolveAclPrincipal { .. } => Some(5),
         _ => None,
     }
 }
@@ -812,9 +813,9 @@ pub fn affected_resources(req: &IpcRequest) -> Vec<Resource> {
         | IpcRequest::ClearAclRules => {
             vec![AclRules, Health]
         }
-        IpcRequest::CreateAclGroup { .. } | IpcRequest::UpdateAclGroup { .. } | IpcRequest::DeleteAclGroup { .. } => {
-            vec![AclGroups]
-        }
+        IpcRequest::CreateAclGroup { .. } | IpcRequest::DeleteAclGroup { .. } => vec![AclGroups],
+        // Rules linked to the group follow its members (0.5).
+        IpcRequest::UpdateAclGroup { .. } => vec![AclGroups, AclRules, Health],
         IpcRequest::AuthDecision { .. } => vec![PendingAuth, AclRules, Health],
         IpcRequest::UpdateDisplayName { .. }
         | IpcRequest::UpdateHandle { .. }

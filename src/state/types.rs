@@ -230,6 +230,9 @@ pub struct AclGroup {
     /// IDs (or not-yet-migrated mnemonics) as stored by Core.
     #[serde(default)]
     pub member_ids: Vec<String>,
+    /// ID → mnemonic the member was entered as (display only; 0.5).
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub member_mnemonics: std::collections::BTreeMap<String, String>,
 }
 
 // ── Interactive auth ─────────────────────────────────────────────────────────

@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.msst.net.model.FirewallRule
 import com.msst.net.model.NodeInfo
+import com.msst.net.model.ServiceItem
 import com.msst.net.model.obj
 import kotlinx.serialization.json.JsonObject
 
@@ -31,12 +32,20 @@ data class PresetDevice(val deviceId: String, val name: String) : RuleSourcePres
 data object RoomMembers : RuleSourcePreset
 
 /**
- * Form state of the three-step rule wizard (3.0.x).  The request uses
- * Core's 3.0.x-compatible `RuleRequest` format; Core validates it and
- * resolves mnemonics to stable IDs (unresolvable ones are rejected), so
- * nothing here resolves identities or evaluates rules.
+ * Form state of the rule wizard: source, target, action, then a summary to
+ * confirm.  The request uses Core's 3.0.x-compatible `RuleRequest` format;
+ * Core validates it and resolves mnemonics to stable IDs (unresolvable ones
+ * are rejected), so nothing here resolves identities or evaluates rules —
+ * [names] only holds what Core reported, for display.
+ *
+ * [from] prefills a new rule ("复制为新规则"); [editing] prefills the form
+ * to update that permanent rule in place (Core 0.5).
  */
-class RuleWizardState(from: FirewallRule? = null, val preset: RuleSourcePreset? = null) {
+class RuleWizardState(
+    from: FirewallRule? = null,
+    val preset: RuleSourcePreset? = null,
+    val editing: FirewallRule? = null,
+) {
     var step by mutableStateOf(1)
     var sourceMode by mutableStateOf(SourceMode.Group)
     var groupId by mutableStateOf<String?>(null)
@@ -54,8 +63,10 @@ class RuleWizardState(from: FirewallRule? = null, val preset: RuleSourcePreset? 
     var action by mutableStateOf("allow")
     var comment by mutableStateOf("")
     var error by mutableStateOf<String?>(null)
+    /** Source ID or mnemonic as entered → name shown for it. */
+    var names by mutableStateOf(mapOf<String, String>())
 
-    val copied = from != null
+    val copied = from != null && editing == null
 
     /** With a [preset] the source is fixed: the wizard starts at the targets. */
     val firstStep = if (preset != null) 2 else 1
@@ -70,20 +81,54 @@ class RuleWizardState(from: FirewallRule? = null, val preset: RuleSourcePreset? 
             null -> {}
         }
         step = firstStep
-        // Prefill from an existing rule ("复制为新规则").
-        if (from != null) {
-            val pg = from.permissionGroup
-            if (pg.kind == "space") {
-                sourceMode = SourceMode.Space
-            } else {
-                sourceMode = SourceMode.Manual
-                sourceKind = if (pg.kind == "devices") "device" else "user"
-                sources = pg.ids.map { SourceItem(sourceKind, it) }
+        // Prefill from an existing rule ("复制为新规则" or editing it).
+        (editing ?: from)?.let { r ->
+            val pg = r.permissionGroup
+            when {
+                r.groupId != null -> {
+                    sourceMode = SourceMode.Group
+                    groupId = r.groupId
+                }
+                pg.kind == "space" -> sourceMode = SourceMode.Space
+                else -> {
+                    sourceMode = SourceMode.Manual
+                    sourceKind = if (pg.kind == "devices") "device" else "user"
+                    sources = pg.ids.map { SourceItem(sourceKind, it) }
+                    names = pg.ids.mapNotNull { id -> r.principalMnemonics[id]?.let { id to it } }.toMap()
+                }
             }
             targetMode = TargetMode.Ports
-            ports = from.protocolPorts.map { PortItem(it.proto, formatPort(it)) }
-            action = from.action
-            comment = from.comment ?: ""
+            ports = r.protocolPorts.map { PortItem(it.proto, formatPort(it)) }
+            action = r.action
+            comment = r.comment ?: ""
+        }
+    }
+
+    /** The confirmation step (the last one). */
+    val lastStep = 4
+
+    /** Ports prefilled from a rule, until [useCatalog] has looked at them. */
+    private var prefilledPorts = (editing ?: from)?.protocolPorts
+
+    /**
+     * Once Core's service catalogue is known: show a prefilled rule's ports
+     * as the services they are (rules store expanded ports, not service
+     * names).  Ports that aren't exactly some services stay as they are.
+     */
+    fun useCatalog(catalog: List<ServiceItem>) {
+        val pp = prefilledPorts ?: return
+        prefilledPorts = null
+        if (targetMode != TargetMode.Ports || ports != pp.map { PortItem(it.proto, formatPort(it)) }) return
+        when (val m = matchServices(pp, catalog)) {
+            ServiceMatch.AllPorts -> {
+                targetMode = TargetMode.Services
+                changeAllServices(true)
+            }
+            is ServiceMatch.Services -> {
+                targetMode = TargetMode.Services
+                services = m.ids.toSet()
+            }
+            null -> {}
         }
     }
 
@@ -93,16 +138,22 @@ class RuleWizardState(from: FirewallRule? = null, val preset: RuleSourcePreset? 
         sourceKind = kind
     }
 
-    fun addSource() {
+    /** Add the entered source; [name]: what Core resolved it to, if known. */
+    fun addSource(name: String? = null) {
         val v = sourceInput.trim()
         if (v.isEmpty()) return
         if (sources.none { it.id == v }) sources = sources + SourceItem(sourceKind, v)
+        if (name != null) names = names + (v to name)
         sourceInput = ""
+        error = null
     }
 
     fun removeSource(id: String) {
         sources = sources.filterNot { it.id == id }
     }
+
+    /** "name (id)" for a source, or the ID alone while no name is known. */
+    fun sourceLabel(id: String): String = names[id]?.takeIf { it != id }?.let { "$it（$id）" } ?: id
 
     fun toggleService(id: String, on: Boolean) {
         services = if (on) services + id else services - id
@@ -158,7 +209,7 @@ class RuleWizardState(from: FirewallRule? = null, val preset: RuleSourcePreset? 
             else -> null
         }
         if (error != null) return false
-        if (step < 3) step++
+        if (step < lastStep) step++
         return true
     }
 
@@ -170,16 +221,24 @@ class RuleWizardState(from: FirewallRule? = null, val preset: RuleSourcePreset? 
     /** The `create_acl_rule` body. */
     fun request(): JsonObject {
         val fields = mutableListOf<Pair<String, Any?>>(
-            "action" to action,
             "direction" to "inbound",
             "enabled" to true,
             "expires_at" to null,
         )
+        fields += common()
+        if (sourceMode == SourceMode.Group) fields += "principals" to emptyList<Any>()
+        comment.trim().takeIf { it.isNotEmpty() }?.let { fields += "comment" to it }
+        return obj(*fields.toTypedArray())
+    }
+
+    /** The `update_acl_rule` patch for [editing]: source, target, action and
+     *  comment are replaced as a whole; `enabled` stays as it is. */
+    fun patch(): JsonObject = obj(*(common() + ("comment" to comment.trim())).toTypedArray())
+
+    private fun common(): List<Pair<String, Any?>> {
+        val fields = mutableListOf<Pair<String, Any?>>("action" to action)
         when (sourceMode) {
-            SourceMode.Group -> {
-                fields += "group_id" to groupId
-                fields += "principals" to emptyList<Any>()
-            }
+            SourceMode.Group -> fields += "group_id" to groupId
             SourceMode.Space -> fields += "principals" to listOf(obj("kind" to "space", "id" to "*"))
             SourceMode.Manual -> fields += "principals" to sources.map { obj("kind" to it.kind, "id" to it.id) }
         }
@@ -188,7 +247,6 @@ class RuleWizardState(from: FirewallRule? = null, val preset: RuleSourcePreset? 
             allServices -> fields += "protocol_ports" to listOf(obj("proto" to "tcp+udp", "port" to "*"))
             else -> fields += "services" to services.toList()
         }
-        comment.trim().takeIf { it.isNotEmpty() }?.let { fields += "comment" to it }
-        return obj(*fields.toTypedArray())
+        return fields
     }
 }
