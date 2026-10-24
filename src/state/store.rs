@@ -54,6 +54,8 @@ pub enum StateChange {
     SyncChanged(SyncState),
     /// A background operation was started or queried (not via an event).
     OperationChanged(String),
+    /// An update check finished (`crate::update`).
+    UpdateChecked,
 }
 
 // ── Parsed query results ─────────────────────────────────────────────────────
@@ -165,6 +167,8 @@ struct Inner {
     snapshot_seqs: HashMap<Resource, u64>,
     /// IDs in `state.operations`, oldest first.
     op_order: VecDeque<String>,
+    /// Result of the last successful update check (not Core state).
+    latest_releases: Option<crate::update::LatestReleases>,
 }
 
 impl Inner {
@@ -377,6 +381,16 @@ impl StateStore {
     /// Get a copy of the current state.
     pub async fn snapshot(&self) -> SystemState {
         self.inner.read().await.state.clone()
+    }
+
+    /// Record an update check's result.
+    pub async fn set_latest_releases(&self, latest: crate::update::LatestReleases) {
+        self.inner.write().await.latest_releases = Some(latest);
+        let _ = self.change_tx.send(StateChange::UpdateChecked);
+    }
+
+    pub async fn latest_releases(&self) -> Option<crate::update::LatestReleases> {
+        self.inner.read().await.latest_releases.clone()
     }
 
     /// Subscribe to state change notifications.

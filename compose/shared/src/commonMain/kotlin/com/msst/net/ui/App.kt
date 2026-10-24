@@ -47,12 +47,18 @@ import com.msst.net.platform.ControllerVariant
 import com.msst.net.platform.WebSession
 import com.msst.net.state.ControllerStore
 import com.msst.net.state.attempt
+import com.msst.net.model.UpdateInfo
+import com.msst.net.state.updateDownloadLabel
+import com.msst.net.state.updateHowto
 import com.msst.net.state.coreBanner
+import com.msst.net.state.updateKey
+import com.msst.net.state.updateSummary
 import com.msst.net.ui.components.BannerBar
 import com.msst.net.ui.components.CopyButton
 import com.msst.net.ui.components.LinkButton
 import com.msst.net.ui.components.Logo
 import com.msst.net.ui.components.MIcon
+import com.msst.net.ui.components.SmallIconButton
 import com.msst.net.ui.dialogs.AccessRequestDialog
 import com.msst.net.ui.screens.AboutScreen
 import com.msst.net.ui.screens.DefenseScreen
@@ -129,6 +135,8 @@ private fun MainShell(onLogout: (() -> Unit)?) {
     val view by ctx.store.view.collectAsState()
     val backendError by ctx.store.backendError.collectAsState()
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
+    // Until the Controller restarts, or a newer release appears.
+    var dismissedUpdate by rememberSaveable { mutableStateOf<String?>(null) }
     val room = view?.state?.room
     val authPlace = if (ctx.platform.variant == ControllerVariant.Mobile) "首页" else "首页右下角"
 
@@ -140,6 +148,9 @@ private fun MainShell(onLogout: (() -> Unit)?) {
             else TopTabs(tab, { tab = it }, onLogout)
 
             coreBanner(view, backendError, authPlace)?.let { BannerBar(it) }
+            view?.update?.takeIf { it.available && updateKey(it) != dismissedUpdate }?.let { u ->
+                UpdateBanner(u, ctx.services::openUrl) { dismissedUpdate = updateKey(u) }
+            }
             if (room != null && room.inRoom) RoomBanner(room.roomName, room.roomId!!, room.relay)
 
             Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -239,6 +250,36 @@ private fun BottomTabs(tab: Tab, onSelect: (Tab) -> Unit) {
                     unselectedTextColor = c.textTertiary,
                 ),
             )
+        }
+    }
+}
+
+/** "A newer release exists — run the installer (or get the new app)",
+ *  with download links.  Phones stack the links under the text. */
+@Composable
+private fun UpdateBanner(u: UpdateInfo, openUrl: (String) -> Unit, onDismiss: () -> Unit) {
+    val c = Msst.colors
+    val text = @Composable { modifier: Modifier ->
+        Text("发现新版本：${updateSummary(u)}。${updateHowto(u)}", modifier, style = MaterialTheme.typography.bodySmall, color = c.primaryDark)
+    }
+    val links = @Composable {
+        LinkButton(updateDownloadLabel(u, "Gitee"), { openUrl(u.downloadGitee) })
+        LinkButton("GitHub", { openUrl(u.downloadGithub) }, MdiIcons.Github)
+    }
+    val bar = Modifier.fillMaxWidth().background(c.primaryLighter).padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp)
+    if (LocalCompact.current) {
+        Column(bar) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                text(Modifier.weight(1f))
+                SmallIconButton(MdiIcons.Close, "暂不提醒", onDismiss)
+            }
+            Row { links() }
+        }
+    } else {
+        Row(bar, verticalAlignment = Alignment.CenterVertically) {
+            text(Modifier.weight(1f))
+            links()
+            SmallIconButton(MdiIcons.Close, "暂不提醒", onDismiss)
         }
     }
 }

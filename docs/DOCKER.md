@@ -29,6 +29,7 @@ Core and the WebUI Controller run as two containers on a Linux host
 | `TLS_CERT_FILE` + `TLS_KEY_FILE` | Your own PEM certificate and key.  Otherwise a self-signed certificate (for `localhost`) is generated once and kept in the config directory. |
 | `WEBUI_BIND` | Listen address (default `0.0.0.0:<port from config.toml>`, port 18080). |
 | `CORE_SOCKET` / `MSST_IPC_PATH` | Core's socket, see above. |
+| `MSST_UPDATE_CHECK=0` | Turn off the daily check for newer Core / Controller releases (GitHub / Gitee release manifests; the WebUI then only reminds to run the installer). |
 
 - **Host networking** (`network_mode: host`) is recommended.  With published
   ports, connections Docker proxies (from the host's own loopback, or IPv6

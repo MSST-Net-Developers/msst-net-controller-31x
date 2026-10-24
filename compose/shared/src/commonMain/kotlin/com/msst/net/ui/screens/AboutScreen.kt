@@ -24,6 +24,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.msst.net.BuildInfo
+import com.msst.net.platform.formatDateTime
+import com.msst.net.state.updateDownloadLabel
+import com.msst.net.state.updateHowto
+import com.msst.net.state.updateSummary
 import com.msst.net.ui.LocalController
 import com.msst.net.ui.MdiIcons
 import com.msst.net.ui.components.Card
@@ -54,6 +58,19 @@ fun AboutScreen() {
                     Text("「${BuildInfo.CODENAME}」", style = MaterialTheme.typography.bodyMedium, color = c.textSecondary)
                 }
                 InlineNote("IPC 协议：控制器 ${view?.controllerProtocol?.ifEmpty { null } ?: "—"} / 客户端核心 ${view?.coreProtocol ?: "未连接"}")
+                view?.update?.let { u ->
+                    val newer = updateSummary(u)
+                    if (newer == null) {
+                        InlineNote("已是最新版本（${formatDateTime(u.checkedAt * 1000)} 从 ${u.source} 检查）")
+                    } else {
+                        Text("发现新版本：$newer", style = MaterialTheme.typography.bodySmall, color = c.primaryDark, textAlign = TextAlign.Center)
+                        InlineNote(updateHowto(u))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            LinkButton(updateDownloadLabel(u, "Gitee"), { ctx.services.openUrl(u.downloadGitee) })
+                            LinkButton("GitHub", { ctx.services.openUrl(u.downloadGithub) }, MdiIcons.Github)
+                        }
+                    }
+                }
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {

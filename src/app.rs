@@ -57,6 +57,9 @@ impl App {
                     Ok(StateChange::OperationChanged(id)) => {
                         tracing::debug!(%id, "Background operation updated");
                     }
+                    Ok(StateChange::UpdateChecked) => {
+                        tracing::debug!("Update check finished");
+                    }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                         tracing::warn!(n, "State change subscriber lagged, events dropped");
                     }

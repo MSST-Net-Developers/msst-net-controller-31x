@@ -126,6 +126,9 @@ pub struct ControllerView {
     pub controller_protocol: String,
     pub capabilities: Capabilities,
     pub state: SystemState,
+    /// Newer releases, from the last update check (`None`: no check has
+    /// succeeded, or checks are off).
+    pub update: Option<crate::update::UpdateInfo>,
 }
 
 /// What [`IpcClient::retry_now`] did.
@@ -239,6 +242,14 @@ impl IpcClient {
     /// Connection status, diagnostics, protocol info and domain state.
     pub async fn view(&self) -> ControllerView {
         let hs = self.handshake_result().await;
+        let state = self.inner.store.snapshot().await;
+        let core_version = state.health.as_ref().and_then(|h| h.core_version.as_deref());
+        let update = self
+            .inner
+            .store
+            .latest_releases()
+            .await
+            .map(|l| crate::update::evaluate(&l, core_version, env!("CARGO_PKG_VERSION"), crate::update::Scope::for_platform()));
         let fmt = |v: (u32, u32, u32)| format!("{}.{}.{}", v.0, v.1, v.2);
         ControllerView {
             connection: self.connection_status().await,
@@ -246,8 +257,14 @@ impl IpcClient {
             core_protocol: hs.as_ref().map(|h| fmt(h.remote_decoded)),
             controller_protocol: fmt(msst_ipc_protocol::version::decode_version(msst_ipc_protocol::PROTOCOL_VERSION)),
             capabilities: hs.map(|h| h.capabilities).unwrap_or_default(),
-            state: self.inner.store.snapshot().await,
+            update,
+            state,
         }
+    }
+
+    /// Publish an update check's result in the view.
+    pub async fn set_latest_releases(&self, latest: crate::update::LatestReleases) {
+        self.inner.store.set_latest_releases(latest).await;
     }
 
     /// Subscribe to connection state transitions.

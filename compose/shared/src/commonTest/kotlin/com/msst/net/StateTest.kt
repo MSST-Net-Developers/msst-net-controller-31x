@@ -13,6 +13,7 @@ import com.msst.net.model.RetryOutcome
 import com.msst.net.model.ServiceItem
 import com.msst.net.model.SystemState
 import com.msst.net.model.UiNotice
+import com.msst.net.model.UpdateInfo
 import com.msst.net.model.obj
 import com.msst.net.platform.AccessRequestNotifier
 import com.msst.net.platform.ApiException
@@ -30,6 +31,10 @@ import com.msst.net.state.formatRuleSource
 import com.msst.net.state.formatTargets
 import com.msst.net.state.matchServices
 import com.msst.net.state.principalLabel
+import com.msst.net.state.updateDownloadLabel
+import com.msst.net.state.updateHowto
+import com.msst.net.state.updateKey
+import com.msst.net.state.updateSummary
 import com.msst.net.state.relayLinkHasPassword
 import com.msst.net.state.RuleWizardState
 import com.msst.net.state.SourceMode
@@ -334,6 +339,32 @@ class StateTest {
         val all = RuleWizardState(from = rule.copy(protocolPorts = listOf(ProtocolPort("tcp", 1, 65535), ProtocolPort("udp", 1, 65535))))
         all.useCatalog(catalog)
         assertTrue(all.allServices)
+    }
+
+    @Test
+    fun updateReminderText() {
+        val u = UpdateInfo(coreCurrent = "3.1.9", coreLatest = "3.1.10", coreUpdate = true, controllerCurrent = "3.1.9", controllerLatest = "3.1.9")
+        assertEquals("Core 3.1.9 → 3.1.10", updateSummary(u))
+        val both = u.copy(controllerLatest = "3.1.10", controllerUpdate = true)
+        assertEquals("Core 3.1.9 → 3.1.10、控制器 3.1.9 → 3.1.10", updateSummary(both))
+        assertNull(updateSummary(u.copy(coreUpdate = false)))
+        assertNull(updateSummary(null))
+        assertTrue(updateKey(u) != updateKey(both), "a newer release brings a dismissed reminder back")
+        // The Rust Controller's JSON.
+        val json = """{"checked_at":1,"source":"Gitee","core_current":null,"core_latest":"3.1.10","core_update":false,
+            "controller_current":"3.1.9","controller_latest":"3.1.10","controller_update":true,
+            "via_installer":true,"download_github":"https://g","download_gitee":"https://e"}"""
+        val parsed = com.msst.net.model.ControllerJson.decodeFromString<UpdateInfo>(json)
+        assertTrue(parsed.available)
+        assertEquals("https://e", parsed.downloadGitee)
+        assertEquals("下载安装器（Gitee）", updateDownloadLabel(parsed, "Gitee"))
+        assertTrue(updateHowto(parsed).contains("安装器"))
+
+        // Android: the app as a whole, downloaded as an APK.
+        val app = UpdateInfo(controllerCurrent = "3.1.9", controllerLatest = "3.1.10", controllerUpdate = true, viaInstaller = false)
+        assertEquals("MSST-Net 应用 3.1.9 → 3.1.10", updateSummary(app))
+        assertEquals("下载应用（GitHub）", updateDownloadLabel(app, "GitHub"))
+        assertTrue(updateHowto(app).contains("APK"))
     }
 
     @Test

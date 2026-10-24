@@ -174,6 +174,8 @@ async fn serve(stop: impl std::future::Future<Output = ()> + Send + 'static) {
     });
 
     let client = IpcClient::new(IpcClientConfig::default(), StateStore::new());
+    // The update reminder is shown in the WebUI pages.
+    let _update = msst_net_controller::update::spawn(&client);
     let state = WebState {
         client,
         config: Arc::new(RwLock::new(cfg)),

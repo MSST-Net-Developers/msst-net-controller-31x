@@ -1457,6 +1457,7 @@ dependencies = [
  "chrono",
  "clap",
  "msst-ipc-protocol",
+ "reqwest",
  "rpassword",
  "serde",
  "serde_json",

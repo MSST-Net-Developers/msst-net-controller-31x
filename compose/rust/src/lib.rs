@@ -53,6 +53,8 @@ pub struct Controller {
     runtime: tokio::runtime::Runtime,
     client: IpcClient,
     notifier: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// Background update checks (off on Android: no installer there).
+    _update: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl Controller {
@@ -71,14 +73,19 @@ impl Controller {
             }
             None => default_connector(),
         };
-        Ok(Self::with_connector(runtime, connector))
+        let mut controller = Self::with_connector(runtime, connector);
+        controller._update = {
+            let _rt = controller.runtime.enter();
+            msst_net_controller::update::spawn(&controller.client)
+        };
+        Ok(controller)
     }
 
     pub fn with_connector(runtime: tokio::runtime::Runtime, connector: Connector) -> Self {
         let client = runtime.block_on(async {
             IpcClient::with_connector(IpcClientConfig::default(), StateStore::new(), connector)
         });
-        Controller { runtime, client, notifier: Mutex::new(None) }
+        Controller { runtime, client, notifier: Mutex::new(None), _update: None }
     }
 
     /// `{"ok":true,"view":ControllerView}`

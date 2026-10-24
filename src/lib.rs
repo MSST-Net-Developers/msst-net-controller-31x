@@ -10,6 +10,7 @@ pub mod ipc;
 pub mod notify;
 pub mod ops;
 pub mod state;
+pub mod update;
 
 #[cfg(feature = "webui")]
 pub mod webui;

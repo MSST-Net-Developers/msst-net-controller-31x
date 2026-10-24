@@ -93,6 +93,21 @@ fails when it is out of date: rerun the script after changing dependencies.
 UI font: 寒蝉全圆体 (ChillRound, SIL OFL 1.1), bundled as Compose
 resources.
 
+### Update reminder
+
+The desktop Controller, the WebUI and `msst-net-cli check-update` compare
+the running Core (`Health.core_version`, protocol 0.5) and Controller with
+the latest stable releases.  Both repositories' `releases/latest` are asked
+on GitHub and Gitee in parallel; the first usable `manifest.json` wins, and
+only its `product` and `version` are read (the installer verifies
+signatures before installing anything).  Checks run 10 s after start, then
+daily (hourly after a failure); `MSST_UPDATE_CHECK=0` turns them off.  A
+newer release shows a dismissible banner (and a line on the About page)
+pointing to the installer's download pages — the Controller never updates
+anything itself.  Android has no installer: Core comes with the app, so the
+app checks the Controller only and points to the Controller's release pages
+(the APKs).
+
 ### WebUI
 
 Same as 3.0.x: config in `~/.config/msst-net-webui/` (existing `passwd` and

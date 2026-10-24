@@ -14,6 +14,7 @@ import com.msst.net.model.ResolvedPrincipal
 import com.msst.net.model.ServiceItem
 import com.msst.net.model.RoomRelay
 import com.msst.net.model.SystemState
+import com.msst.net.model.UpdateInfo
 import com.msst.net.platform.DeviceApp
 
 /** Overall status shown in the status bar. */
@@ -238,6 +239,32 @@ fun formatPrincipal(pg: PermissionGroup, mnemonics: Map<String, String>): String
         else mnemonics[id]?.let { "$it ($id)" } ?: id
     }
 }
+
+/** What can be updated ("Core 3.1.9 → 3.1.10、控制器 …"; the app on
+ *  Android); null when nothing is newer. */
+fun updateSummary(u: UpdateInfo?): String? {
+    if (u == null || !u.available) return null
+    if (!u.viaInstaller) return "MSST-Net 应用 ${u.controllerCurrent} → ${u.controllerLatest}"
+    return listOfNotNull(
+        if (u.coreUpdate) "Core ${u.coreCurrent} → ${u.coreLatest}" else null,
+        if (u.controllerUpdate) "控制器 ${u.controllerCurrent} → ${u.controllerLatest}" else null,
+    ).joinToString("、")
+}
+
+/** How to update: the installer, or (Android) the new app. */
+fun updateHowto(u: UpdateInfo): String =
+    if (u.viaInstaller) UPDATE_HOWTO else "请下载与本机架构对应的 APK（多数手机为 aarch64）并安装，覆盖安装即可保留现有设置。"
+
+/** Label of the download link for [source] (`Gitee` / `GitHub`). */
+fun updateDownloadLabel(u: UpdateInfo, source: String): String =
+    (if (u.viaInstaller) "下载安装器" else "下载应用") + "（$source）"
+
+/** Identifies an update offer: a dismissed reminder returns only when a
+ *  newer release appears. */
+fun updateKey(u: UpdateInfo): String = "${u.coreLatest}|${u.controllerLatest}"
+
+/** How to update: the installer, never the Controller itself. */
+const val UPDATE_HOWTO = "请下载最新的 MSST-Net 安装器，以管理员身份运行（Linux/macOS：sudo）并选择「升级」。"
 
 /** Sources of [rule], naming the permission group it follows, if any. */
 fun formatRuleSource(rule: FirewallRule, groups: List<AclGroup>): String {

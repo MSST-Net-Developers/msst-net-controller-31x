@@ -99,6 +99,8 @@ pub struct HealthState {
     /// Credential of Core's coordinator connection (protocol 0.4): `"oidc"`,
     /// `"guest"` (no valid MSST login: room mode only) or `"none"`.
     pub coordinator_credential: Option<String>,
+    /// Core's release version (protocol 0.5; `None` from older Cores).
+    pub core_version: Option<String>,
 }
 
 impl HealthState {

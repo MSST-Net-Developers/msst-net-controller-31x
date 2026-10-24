@@ -315,8 +315,32 @@ data class ControllerView(
     @SerialName("controller_protocol") val controllerProtocol: String = "",
     val capabilities: Capabilities = Capabilities(),
     val state: SystemState = SystemState(),
+    /** Newer releases from the Controller's last update check. */
+    val update: UpdateInfo? = null,
 ) {
     val connected get() = connection == ConnectionStatus.Connected
+}
+
+/** The Controller's update check against the latest releases (versions
+ *  only; the installer — on Android a new app — does the updating). */
+@Serializable
+data class UpdateInfo(
+    @SerialName("checked_at") val checkedAt: Long = 0,
+    val source: String = "",
+    /** `null`: Core not connected, or too old to report its version. */
+    @SerialName("core_current") val coreCurrent: String? = null,
+    @SerialName("core_latest") val coreLatest: String? = null,
+    @SerialName("core_update") val coreUpdate: Boolean = false,
+    @SerialName("controller_current") val controllerCurrent: String = "",
+    @SerialName("controller_latest") val controllerLatest: String? = null,
+    @SerialName("controller_update") val controllerUpdate: Boolean = false,
+    /** Updated with the installer; `false` (Android): by installing the new app. */
+    @SerialName("via_installer") val viaInstaller: Boolean = true,
+    /** Download pages of the installer, or of the app. */
+    @SerialName("download_github") val downloadGithub: String = "",
+    @SerialName("download_gitee") val downloadGitee: String = "",
+) {
+    val available: Boolean get() = coreUpdate || controllerUpdate
 }
 
 // ── Notices ──────────────────────────────────────────────────────────────────

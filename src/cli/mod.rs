@@ -73,6 +73,8 @@ pub enum Command {
     Groups(GroupCmd),
     /// 可用于规则的服务模板
     Services,
+    /// 检查 Core 与控制器是否有新版本（从 GitHub / Gitee 读取最新发布）
+    CheckUpdate,
     /// 访问记录及快捷操作
     #[command(subcommand)]
     Access(AccessCmd),
@@ -594,6 +596,9 @@ pub async fn wait_ready(client: &IpcClient, timeout: Duration) -> Result<Control
 
 /// Run one command.
 pub async fn run(ctx: &mut Ctx<'_>, command: &Command) -> Result<()> {
+    if matches!(command, Command::CheckUpdate) {
+        return check_update(ctx).await;
+    }
     let view = match wait_ready(ctx.client, ctx.timeout).await {
         Ok(v) => v,
         Err(e @ (CliError::NotConnected { .. } | CliError::Controller(ControllerError::VersionMismatch { .. })))
@@ -620,6 +625,7 @@ pub async fn run(ctx: &mut Ctx<'_>, command: &Command) -> Result<()> {
         Command::Rules(c) => rules(ctx, &view, c).await,
         Command::Groups(c) => groups(ctx, &view, c).await,
         Command::Services => services(ctx).await,
+        Command::CheckUpdate => unreachable!("handled before connecting"),
         Command::Access(c) => access(ctx, &view, c).await,
         Command::Identity(a) => identity(ctx, &view, a).await,
         Command::Login => login(ctx, &view).await,
@@ -1340,6 +1346,44 @@ async fn groups(ctx: &mut Ctx<'_>, v: &ControllerView, cmd: &GroupCmd) -> Result
             Ok(())
         }
     }
+}
+
+/// `check-update`: works without Core too (then only the Controller is
+/// compared).
+async fn check_update(ctx: &mut Ctx<'_>) -> Result<()> {
+    use crate::update;
+    let core_version = wait_ready(ctx.client, ctx.timeout).await.ok().and_then(|v| v.state.health.and_then(|h| h.core_version));
+    let latest = update::check(&update::http_client(), update::Scope::Full)
+        .await
+        .map_err(|e| ControllerError::Io(format!("无法获取最新发布信息：{e}")))?;
+    let info = update::evaluate(&latest, core_version.as_deref(), env!("CARGO_PKG_VERSION"), update::Scope::Full);
+    if ctx.json {
+        ctx.print_json(&serde_json::to_value(&info).unwrap_or_default());
+        return Ok(());
+    }
+    let line = |name: &str, current: Option<&str>, latest: Option<&str>, newer: bool| {
+        let current = current.unwrap_or("未知");
+        match latest {
+            None => format!("{name}：当前 {current}，最新版本获取失败"),
+            Some(l) if newer => format!("{name}：当前 {current}，可更新到 {l}"),
+            Some(l) => format!("{name}：当前 {current}，最新 {l}"),
+        }
+    };
+    say!(ctx, "{}", line("Core", info.core_current.as_deref(), info.core_latest.as_deref(), info.core_update));
+    if info.core_current.is_none() {
+        say!(ctx, "      （未连接客户端核心，或客户端核心版本较旧、不报告版本号，无法比较）");
+    }
+    say!(ctx, "{}", line("控制器", Some(&info.controller_current), info.controller_latest.as_deref(), info.controller_update));
+    say!(ctx, "（发布信息来自 {}）", info.source);
+    if info.available() {
+        say!(ctx);
+        say!(ctx, "有新版本可用。请下载最新的 MSST-Net 安装器，以管理员身份运行（Linux/macOS：sudo）并选择「升级」：");
+        say!(ctx, "  Gitee： {}", info.download_gitee);
+        say!(ctx, "  GitHub：{}", info.download_github);
+    } else {
+        say!(ctx, "已是最新版本。");
+    }
+    Ok(())
 }
 
 async fn services(ctx: &mut Ctx<'_>) -> Result<()> {
