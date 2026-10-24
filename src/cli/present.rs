@@ -325,6 +325,8 @@ pub struct RuleView {
     pub comment: Option<String>,
     pub mnemonics: serde_json::Map<String, Value>,
     pub pending_migration: bool,
+    /// The permission group the rule follows (Core 0.5).
+    pub group_id: Option<String>,
 }
 
 impl RuleView {
@@ -361,6 +363,7 @@ impl RuleView {
             comment: str_of(f.get("comment")),
             mnemonics: f.get("principal_mnemonics").and_then(Value::as_object).cloned().unwrap_or_default(),
             pending_migration: f.get("pending_migration").and_then(Value::as_bool).unwrap_or(false),
+            group_id: str_of(f.get("group_id")),
         }
     }
 

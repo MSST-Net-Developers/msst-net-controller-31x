@@ -161,6 +161,8 @@ pub enum RuleCmd {
     },
     /// 添加规则：一种来源 + 一种目标
     Add(RuleAddArgs),
+    /// 修改永久规则：给出的来源、目标、动作或备注整体替换，其余不变（临时规则只能删除）
+    Edit(RuleEditArgs),
     /// 启用规则
     Enable { rule_id: String },
     /// 停用规则
@@ -204,6 +206,47 @@ pub struct RuleAddArgs {
     pub comment: Option<String>,
 }
 
+#[derive(Args, Debug, Default)]
+pub struct RuleEditArgs {
+    /// 规则 ID（可只写前几位）
+    pub rule_id: String,
+    /// 新来源设备（设备 ID 或助记符，可重复）
+    #[arg(long = "device", value_name = "ID")]
+    pub devices: Vec<String>,
+    /// 新来源用户（用户 ID 或助记符，可重复）
+    #[arg(long = "user", value_name = "ID")]
+    pub users: Vec<String>,
+    /// 新来源为权限组（规则随权限组成员更新）
+    #[arg(long, value_name = "组 ID")]
+    pub group: Option<String>,
+    /// 新来源为当前所有房间成员
+    #[arg(long)]
+    pub room_members: bool,
+    /// 新目标服务（可重复）
+    #[arg(long = "service", value_name = "服务 ID")]
+    pub services: Vec<String>,
+    /// 新目标协议与端口，写法同 `rules add --port`（可重复）
+    #[arg(long = "port", value_name = "协议/端口")]
+    pub ports: Vec<String>,
+    /// 新目标为所有协议及端口
+    #[arg(long)]
+    pub all_ports: bool,
+    /// 新动作
+    #[arg(long, value_enum)]
+    pub action: Option<RuleAction>,
+    /// 新备注（空字符串清除备注）
+    #[arg(long)]
+    pub comment: Option<String>,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RuleAction {
+    /// 允许
+    Allow,
+    /// 拒绝
+    Deny,
+}
+
 #[derive(Subcommand, Debug)]
 pub enum GroupCmd {
     /// 列出权限组
@@ -226,7 +269,7 @@ pub enum GroupCmd {
         #[arg(long = "member", value_name = "ID")]
         members: Vec<String>,
     },
-    /// 删除权限组（已用它创建的规则不受影响）
+    /// 删除权限组（仍被规则使用的权限组不能删除）
     Delete { group_id: String },
 }
 
@@ -946,30 +989,21 @@ pub fn parse_port_item(s: &str) -> Result<(String, String)> {
     Ok((proto, port))
 }
 
-/// The `create_acl_rule` body for `rules add` (the rule wizard's request,
-/// Core's 3.0.x-compatible `RuleRequest`), and what needs confirming.
-/// Identities are passed as entered: Core resolves mnemonics and rejects
-/// unknown ones.
-pub fn build_rule(a: &RuleAddArgs, group_id: Option<String>) -> Result<(Value, Option<String>)> {
-    let sources = [!a.devices.is_empty(), !a.users.is_empty(), group_id.is_some(), a.room_members];
-    match sources.iter().filter(|b| **b).count() {
-        0 => return invalid("请指定来源：--device、--user、--group 或 --room-members 之一。"),
-        1 => {}
-        _ => return invalid("一条规则只能有一种来源：--device、--user、--group 与 --room-members 不能同时使用。"),
-    }
-    let targets = [!a.services.is_empty(), !a.ports.is_empty(), a.all_ports];
-    match targets.iter().filter(|b| **b).count() {
-        0 => return invalid("请指定目标：--service、--port 或 --all-ports 之一。"),
-        1 => {}
-        _ => return invalid("一条规则只能有一种目标：--service、--port 与 --all-ports 不能同时使用。"),
-    }
+/// A rule source given on the command line.
+enum Source {
+    /// Linked to this permission group.
+    Group(String),
+    /// `principals` as Core takes them.
+    Principals(Value),
+}
 
-    let mut rule = serde_json::Map::new();
-    rule.insert("action".into(), json!(if a.deny { "deny" } else { "allow" }));
-    rule.insert("direction".into(), json!("inbound"));
-    rule.insert("enabled".into(), json!(true));
-    rule.insert("expires_at".into(), Value::Null);
-
+/// The source among `--device`, `--user`, `--group`, `--room-members`
+/// (`None`: none given; more than one is an error).
+fn parse_source(devices: &[String], users: &[String], group_id: Option<String>, room_members: bool) -> Result<Option<Source>> {
+    let given = [!devices.is_empty(), !users.is_empty(), group_id.is_some(), room_members];
+    if given.iter().filter(|b| **b).count() > 1 {
+        return invalid("一条规则只能有一种来源：--device、--user、--group 与 --room-members 不能同时使用。");
+    }
     let principals = |kind: &str, ids: &[String]| -> Result<Value> {
         let mut seen = Vec::<&str>::new();
         for id in ids {
@@ -983,24 +1017,43 @@ pub fn build_rule(a: &RuleAddArgs, group_id: Option<String>) -> Result<(Value, O
         }
         Ok(Value::Array(seen.into_iter().map(|id| json!({ "kind": kind, "id": id })).collect()))
     };
-    if let Some(g) = group_id {
-        rule.insert("group_id".into(), json!(g));
-        rule.insert("principals".into(), json!([]));
-    } else if a.room_members {
-        rule.insert("principals".into(), json!([{ "kind": "space", "id": "*" }]));
-    } else if !a.devices.is_empty() {
-        rule.insert("principals".into(), principals("device", &a.devices)?);
+    Ok(Some(if let Some(g) = group_id {
+        Source::Group(g)
+    } else if room_members {
+        Source::Principals(json!([{ "kind": "space", "id": "*" }]))
+    } else if !devices.is_empty() {
+        Source::Principals(principals("device", devices)?)
+    } else if !users.is_empty() {
+        Source::Principals(principals("user", users)?)
     } else {
-        rule.insert("principals".into(), principals("user", &a.users)?);
-    }
+        return Ok(None);
+    }))
+}
 
-    let mut risk = None;
-    if a.all_ports {
-        rule.insert("protocol_ports".into(), json!([{ "proto": "tcp+udp", "port": "*" }]));
-        risk = Some("所有协议及端口".to_string());
-    } else if !a.ports.is_empty() {
+/// A rule target given on the command line.
+struct Target {
+    /// `protocol_ports` or `services`.
+    key: &'static str,
+    value: Value,
+    /// What needs confirming ("所有协议及端口", …).
+    risk: Option<String>,
+}
+
+/// The target among `--service`, `--port`, `--all-ports` (`None`: none
+/// given; more than one is an error).
+fn parse_target(services: &[String], ports: &[String], all_ports: bool) -> Result<Option<Target>> {
+    let given = [!services.is_empty(), !ports.is_empty(), all_ports];
+    if given.iter().filter(|b| **b).count() > 1 {
+        return invalid("一条规则只能有一种目标：--service、--port 与 --all-ports 不能同时使用。");
+    }
+    if all_ports {
+        let value = json!([{ "proto": "tcp+udp", "port": "*" }]);
+        return Ok(Some(Target { key: "protocol_ports", value, risk: Some("所有协议及端口".to_string()) }));
+    }
+    if !ports.is_empty() {
+        let mut risk = None;
         let mut items = Vec::<(String, String)>::new();
-        for p in &a.ports {
+        for p in ports {
             let item = parse_port_item(p)?;
             if covers_all_ports(&item.1) && risk.is_none() {
                 let proto = if item.0 == "tcp+udp" { "TCP 和 UDP".to_string() } else { item.0.to_uppercase() };
@@ -1010,24 +1063,87 @@ pub fn build_rule(a: &RuleAddArgs, group_id: Option<String>) -> Result<(Value, O
                 items.push(item);
             }
         }
-        rule.insert(
-            "protocol_ports".into(),
-            Value::Array(items.into_iter().map(|(proto, port)| json!({ "proto": proto, "port": port })).collect()),
-        );
-    } else {
+        let value = Value::Array(items.into_iter().map(|(proto, port)| json!({ "proto": proto, "port": port })).collect());
+        return Ok(Some(Target { key: "protocol_ports", value, risk }));
+    }
+    if !services.is_empty() {
         let mut ids = Vec::<String>::new();
-        for s in &a.services {
+        for s in services {
             let s = s.trim().to_string();
             if !s.is_empty() && !ids.contains(&s) {
                 ids.push(s);
             }
         }
-        rule.insert("services".into(), json!(ids));
+        return Ok(Some(Target { key: "services", value: json!(ids), risk: None }));
     }
+    Ok(None)
+}
+
+/// The `create_acl_rule` body for `rules add` (the rule wizard's request,
+/// Core's 3.0.x-compatible `RuleRequest`), and what needs confirming.
+/// Identities are passed as entered: Core resolves mnemonics and rejects
+/// unknown ones.
+pub fn build_rule(a: &RuleAddArgs, group_id: Option<String>) -> Result<(Value, Option<String>)> {
+    let Some(source) = parse_source(&a.devices, &a.users, group_id, a.room_members)? else {
+        return invalid("请指定来源：--device、--user、--group 或 --room-members 之一。");
+    };
+    let Some(target) = parse_target(&a.services, &a.ports, a.all_ports)? else {
+        return invalid("请指定目标：--service、--port 或 --all-ports 之一。");
+    };
+
+    let mut rule = serde_json::Map::new();
+    rule.insert("action".into(), json!(if a.deny { "deny" } else { "allow" }));
+    rule.insert("direction".into(), json!("inbound"));
+    rule.insert("enabled".into(), json!(true));
+    rule.insert("expires_at".into(), Value::Null);
+    match source {
+        Source::Group(g) => {
+            rule.insert("group_id".into(), json!(g));
+            rule.insert("principals".into(), json!([]));
+        }
+        Source::Principals(p) => {
+            rule.insert("principals".into(), p);
+        }
+    }
+    rule.insert(target.key.into(), target.value);
     if let Some(c) = a.comment.as_deref().map(str::trim).filter(|c| !c.is_empty()) {
         rule.insert("comment".into(), json!(c));
     }
-    Ok((Value::Object(rule), risk))
+    Ok((Value::Object(rule), target.risk))
+}
+
+/// The `update_acl_rule` patch for `rules edit`: only what was given, each
+/// part replacing the rule's current one.  Also returns what needs
+/// confirming, and whether the patch needs Core 0.5 (anything besides the
+/// comment).
+pub fn build_patch(a: &RuleEditArgs, group_id: Option<String>) -> Result<(Value, Option<String>, bool)> {
+    let mut patch = serde_json::Map::new();
+    match parse_source(&a.devices, &a.users, group_id, a.room_members)? {
+        // `group_id` and `principals` are exclusive in a patch.
+        Some(Source::Group(g)) => {
+            patch.insert("group_id".into(), json!(g));
+        }
+        Some(Source::Principals(p)) => {
+            patch.insert("principals".into(), p);
+        }
+        None => {}
+    }
+    let mut risk = None;
+    if let Some(target) = parse_target(&a.services, &a.ports, a.all_ports)? {
+        patch.insert(target.key.into(), target.value);
+        risk = target.risk;
+    }
+    if let Some(action) = a.action {
+        patch.insert("action".into(), json!(if action == RuleAction::Deny { "deny" } else { "allow" }));
+    }
+    let needs_full_edit = !patch.is_empty();
+    if let Some(c) = &a.comment {
+        patch.insert("comment".into(), json!(c.trim()));
+    }
+    if patch.is_empty() {
+        return invalid("请指定要修改的内容：来源（--device/--user/--group/--room-members）、目标（--service/--port/--all-ports）、--action 或 --comment。");
+    }
+    Ok((Value::Object(patch), risk, needs_full_edit))
 }
 
 async fn rules(ctx: &mut Ctx<'_>, v: &ControllerView, cmd: &RuleCmd) -> Result<()> {
@@ -1051,7 +1167,7 @@ async fn rules(ctx: &mut Ctx<'_>, v: &ControllerView, cmd: &RuleCmd) -> Result<(
                     flags.push("已停用".to_string());
                 }
                 if let Some(t) = rv.expires_at {
-                    flags.push(if t <= now { "已过期".into() } else { format!("{} 到期", format_time_ms(t * 1000)) });
+                    flags.push(if t <= now { "临时，已过期".into() } else { format!("临时，{} 到期", format_time_ms(t * 1000)) });
                 }
                 if rv.pending_migration {
                     flags.push("含未解析的助记符".into());
@@ -1064,6 +1180,10 @@ async fn rules(ctx: &mut Ctx<'_>, v: &ControllerView, cmd: &RuleCmd) -> Result<(
                 }
                 if *verbose {
                     say!(ctx, "          ID：{}", rv.id);
+                    if let Some(g) = &rv.group_id {
+                        let name = v.state.acl_groups.iter().find(|x| x.id == *g).map(|x| x.name.as_str()).unwrap_or(g);
+                        say!(ctx, "          权限组：{name}（规则随其成员更新）");
+                    }
                     say!(ctx, "          来源：{}", rv.sources());
                     say!(ctx, "          端口：{}", rv.ports_text());
                 }
@@ -1083,6 +1203,30 @@ async fn rules(ctx: &mut Ctx<'_>, v: &ControllerView, cmd: &RuleCmd) -> Result<(
             let r = ctx.command(IpcRequest::CreateAclRule { rule }).await?;
             let id = r.pointer("/rule/id").or_else(|| r.get("id")).and_then(Value::as_str).map(short).unwrap_or_default();
             ctx.done(&r, format!("已添加规则 {id}。"));
+            Ok(())
+        }
+        RuleCmd::Edit(a) => {
+            let id = rule_id(&a.rule_id)?;
+            let current = RuleView::from_rule(rules.iter().find(|r| r.id == id).expect("resolved from this list"));
+            if current.expires_at.is_some() {
+                return invalid(format!("规则 {} 是临时规则，只能查看或删除，不能修改。", short(&id)));
+            }
+            let group_id = match &a.group {
+                Some(g) => Some(resolve_id(g, v.state.acl_groups.iter().map(|g| g.id.as_str()), "权限组")?),
+                None => None,
+            };
+            let (patch, risk, needs_full_edit) = build_patch(a, group_id)?;
+            let supported = ctx.client.handshake_result().await.is_some_and(|h| h.capabilities.acl_edit);
+            if needs_full_edit && !supported {
+                return invalid("当前客户端核心只支持修改规则的备注和启用状态；如需修改来源、目标或动作，请更新客户端核心，或删除后重建规则。");
+            }
+            if let Some(what) = risk {
+                let deny = patch.get("action").and_then(Value::as_str).unwrap_or(&current.action) == "deny";
+                let verb = if deny { "拒绝" } else { "允许" };
+                ctx.confirm(&format!("修改后此规则将{verb}来源访问本机{what}。确定修改？"))?;
+            }
+            let r = ctx.command(IpcRequest::UpdateAclRule { rule_id: id.clone(), patch }).await?;
+            ctx.done(&r, format!("规则 {} 已更新。", short(&id)));
             Ok(())
         }
         RuleCmd::Enable { rule_id: id } | RuleCmd::Disable { rule_id: id } => {
@@ -1149,9 +1293,15 @@ async fn groups(ctx: &mut Ctx<'_>, v: &ControllerView, cmd: &GroupCmd) -> Result
             }
             for g in groups {
                 let kind = if g.kind == "user" { "用户" } else { "设备" };
-                say!(ctx, "{}  {}（{kind}，{} 个成员）", short(&g.id), g.name, g.member_ids.len());
+                let linked = v.state.acl_rules.iter().filter(|r| RuleView::from_rule(r).group_id.as_deref() == Some(g.id.as_str())).count();
+                let linked = if linked > 0 { format!("，{linked} 条规则使用") } else { String::new() };
+                say!(ctx, "{}  {}（{kind}，{} 个成员{linked}）", short(&g.id), g.name, g.member_ids.len());
                 for m in &g.member_ids {
-                    let name = device_name(&v.state, m);
+                    let name = match g.member_mnemonics.get(m) {
+                        Some(mnemonic) => mnemonic.clone(),
+                        None if g.kind == "device" => device_name(&v.state, m),
+                        None => m.clone(),
+                    };
                     say!(ctx, "          {}", if name != *m { format!("{name} ({m})") } else { m.clone() });
                 }
             }
@@ -1184,7 +1334,7 @@ async fn groups(ctx: &mut Ctx<'_>, v: &ControllerView, cmd: &GroupCmd) -> Result
         GroupCmd::Delete { group_id: id } => {
             let id = group_id(id)?;
             let name = groups.iter().find(|g| g.id == id).map(|g| g.name.clone()).unwrap_or_default();
-            ctx.confirm(&format!("确定删除权限组「{name}」？已用它创建的规则不受影响。"))?;
+            ctx.confirm(&format!("确定删除权限组「{name}」？"))?;
             let r = ctx.command(IpcRequest::DeleteAclGroup { group_id: id }).await?;
             ctx.done(&r, format!("已删除权限组 {name}。"));
             Ok(())

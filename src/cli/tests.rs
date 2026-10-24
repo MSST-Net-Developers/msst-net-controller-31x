@@ -200,6 +200,90 @@ async fn all_ports_rule_needs_confirmation() {
     assert_eq!(sent.len(), 1);
 }
 
+fn edit_args(f: impl FnOnce(&mut RuleEditArgs)) -> RuleEditArgs {
+    let mut a = RuleEditArgs::default();
+    f(&mut a);
+    a
+}
+
+#[test]
+fn edit_patch_has_only_what_was_given() {
+    let (patch, risk, full) = build_patch(&edit_args(|a| a.comment = Some("  ".into())), None).unwrap();
+    assert_eq!(patch, json!({ "comment": "" }), "an empty comment clears it");
+    assert_eq!((risk, full), (None, false), "comment only: works with older Cores");
+
+    let (patch, _, full) = build_patch(
+        &edit_args(|a| {
+            a.users = vec!["bob".into(), "bob".into()];
+            a.services = vec!["ssh".into()];
+            a.action = Some(RuleAction::Deny);
+        }),
+        None,
+    )
+    .unwrap();
+    assert_eq!(patch, json!({ "principals": [{ "kind": "user", "id": "bob" }], "services": ["ssh"], "action": "deny" }));
+    assert!(full);
+
+    // A group source is `group_id` alone: Core rejects it with `principals`.
+    let (patch, _, _) = build_patch(&edit_args(|_| {}), Some("g1".into())).unwrap();
+    assert_eq!(patch, json!({ "group_id": "g1" }));
+
+    let (patch, risk, _) = build_patch(&edit_args(|a| a.all_ports = true), None).unwrap();
+    assert_eq!(patch, json!({ "protocol_ports": [{ "proto": "tcp+udp", "port": "*" }] }));
+    assert_eq!(risk.as_deref(), Some("所有协议及端口"));
+
+    let err = |a: RuleEditArgs| match build_patch(&a, None) {
+        Err(CliError::Invalid(m)) => m,
+        other => panic!("{other:?}"),
+    };
+    assert!(err(edit_args(|_| {})).contains("请指定要修改的内容"));
+    assert!(err(edit_args(|a| { a.devices = vec!["d".into()]; a.room_members = true; })).contains("一种来源"));
+    assert!(err(edit_args(|a| { a.services = vec!["ssh".into()]; a.ports = vec!["22".into()]; })).contains("一种目标"));
+    assert!(err(edit_args(|a| a.ports = vec!["icmp/1".into()])).contains("协议无效"));
+}
+
+fn edit_core() -> FakeCore {
+    FakeCore::new(|req| match req {
+        IpcRequest::GetAclRules => Ok(json!({ "rules": [
+            { "id": "bbbb1111-0000", "permission_group": { "kind": "devices", "ids": ["d1"] },
+              "protocol_ports": [{ "proto": "tcp", "start": 25565, "end": 25565 }], "action": "deny", "enabled": true },
+            { "id": "bbbb2222-0000", "permission_group": { "kind": "devices", "ids": ["d1"] },
+              "protocol_ports": [{ "proto": "tcp", "start": 22, "end": 22 }], "action": "allow", "enabled": true,
+              "expires_at": 4_000_000_000_i64 },
+        ] })),
+        IpcRequest::GetAclGroups => Ok(json!({ "groups": [{ "id": "gggg1111", "name": "friends", "kind": "user", "member_ids": [] }] })),
+        IpcRequest::UpdateAclRule { rule_id, .. } => Ok(json!({ "rule": { "id": rule_id } })),
+        other => default_responses(other),
+    })
+}
+
+#[tokio::test]
+async fn rules_edit_updates_a_permanent_rule() {
+    let core = edit_core();
+    let (r, out, sent) = run_cli(&core, &["rules", "edit", "bbbb1", "--group", "gggg", "--service", "ssh", "--action", "allow"], None).await;
+    r.unwrap();
+    assert!(out.contains("规则 bbbb1111 已更新"), "{out}");
+    let [IpcRequest::UpdateAclRule { rule_id, patch }] = sent.as_slice() else { panic!("{sent:?}") };
+    assert_eq!(rule_id, "bbbb1111-0000");
+    assert_eq!(patch, &json!({ "group_id": "gggg1111", "services": ["ssh"], "action": "allow" }));
+
+    // All ports: confirmed with the action the rule will have (deny: kept).
+    let (r, _, sent) = run_cli(&core, &["rules", "edit", "bbbb1", "--all-ports"], None).await;
+    assert!(matches!(r, Err(CliError::Invalid(m)) if m.contains("--yes")));
+    assert!(sent.is_empty());
+}
+
+#[tokio::test]
+async fn temporary_rules_cannot_be_edited() {
+    let core = edit_core();
+    let (r, _, sent) = run_cli(&core, &["rules", "edit", "bbbb2", "--comment", "x"], None).await;
+    assert!(matches!(r, Err(CliError::Invalid(m)) if m.contains("临时规则")));
+    assert!(sent.is_empty());
+    let (r, out, _) = run_cli(&core, &["rules", "list"], None).await;
+    r.unwrap();
+    assert!(out.contains("临时，"), "{out}");
+}
+
 #[tokio::test]
 async fn rules_delete_resolves_prefix_and_confirms() {
     let core = rules_core();
