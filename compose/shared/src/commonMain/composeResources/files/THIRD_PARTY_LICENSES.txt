@@ -150,12 +150,19 @@ Rust crates:
   iana-time-zone 0.1.65  (MIT)
   iana-time-zone-haiku 0.1.2  (MIT)
   icu_collections 2.3.0  (Unicode-3.0)
+  icu_collections 2.4.0  (Unicode-3.0)
   icu_locale_core 2.3.0  (Unicode-3.0)
+  icu_locale_core 2.4.0  (Unicode-3.0)
   icu_normalizer 2.3.0  (Unicode-3.0)
+  icu_normalizer 2.4.0  (Unicode-3.0)
   icu_normalizer_data 2.3.0  (Unicode-3.0)
+  icu_normalizer_data 2.4.0  (Unicode-3.0)
   icu_properties 2.3.0  (Unicode-3.0)
+  icu_properties 2.4.0  (Unicode-3.0)
   icu_properties_data 2.3.0  (Unicode-3.0)
+  icu_properties_data 2.4.0  (Unicode-3.0)
   icu_provider 2.3.1  (Unicode-3.0)
+  icu_provider 2.4.0  (Unicode-3.0)
   idna 1.1.0  (MIT)
   idna_adapter 1.2.2  (MIT)
   if-addrs 0.13.4  (MIT)
@@ -294,6 +301,7 @@ Rust crates:
   time 0.3.55  (MIT)
   time-core 0.1.9  (MIT)
   tinystr 0.8.4  (Unicode-3.0)
+  tinystr 0.8.5  (Unicode-3.0)
   tokio 1.53.2  (MIT)
   tokio-macros 2.7.2  (MIT)
   tokio-rustls 0.26.6  (MIT)
@@ -345,6 +353,7 @@ Rust crates:
   wasm-bindgen-shared 0.2.129  (MIT)
   web-sys 0.3.106  (MIT)
   webpki-roots 0.26.11  (CDLA-Permissive-2.0)
+  webpki-roots 1.0.11  (CDLA-Permissive-2.0)
   webpki-roots 1.0.9  (CDLA-Permissive-2.0)
   widestring 1.2.1  (MIT)
   winapi 0.3.9  (MIT)
@@ -403,6 +412,7 @@ Rust crates:
   x25519-dalek 2.0.1  (BSD-3-Clause)
   yasna 0.5.2  (MIT)
   yoke 0.8.3  (Unicode-3.0)
+  yoke 0.8.4  (Unicode-3.0)
   yoke-derive 0.8.4  (Unicode-3.0)
   zbus 5.19.0  (MIT)
   zbus_macros 5.19.0  (MIT)
@@ -415,7 +425,9 @@ Rust crates:
   zeroize_derive 1.5.0  (MIT)
   zerotrie 0.2.5  (Unicode-3.0)
   zerovec 0.11.8  (Unicode-3.0)
+  zerovec 0.11.9  (Unicode-3.0)
   zerovec-derive 0.11.6  (Unicode-3.0)
+  zerovec-derive 0.11.7  (Unicode-3.0)
   zmij 1.0.23  (MIT)
   zvariant 5.15.1  (MIT)
   zvariant_derive 5.15.1  (MIT)
@@ -1697,7 +1709,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ========================================================================
 [12] Community Data License Agreement Permissive 2.0 (CDLA-Permissive-2.0)
 
-Used by: webpki-roots 0.26.11, webpki-roots 1.0.9
+Used by: webpki-roots 0.26.11, webpki-roots 1.0.11, webpki-roots 1.0.9
 
 # Community Data License Agreement - Permissive - Version 2.0
 
@@ -7249,7 +7261,7 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 ========================================================================
 [187] Unicode License v3 (Unicode-3.0)
 
-Used by: icu_collections 2.3.0, icu_locale_core 2.3.0, icu_normalizer 2.3.0, icu_normalizer_data 2.3.0, icu_properties 2.3.0, icu_properties_data 2.3.0, icu_provider 2.3.1, litemap 0.8.3, potential_utf 0.1.6, tinystr 0.8.4, writeable 0.6.4, yoke 0.8.3, yoke-derive 0.8.4, zerofrom 0.1.8, zerofrom-derive 0.1.8, zerotrie 0.2.5, zerovec 0.11.8, zerovec-derive 0.11.6
+Used by: icu_collections 2.3.0, icu_collections 2.4.0, icu_locale_core 2.3.0, icu_locale_core 2.4.0, icu_normalizer 2.3.0, icu_normalizer 2.4.0, icu_normalizer_data 2.3.0, icu_normalizer_data 2.4.0, icu_properties 2.3.0, icu_properties 2.4.0, icu_properties_data 2.3.0, icu_properties_data 2.4.0, icu_provider 2.3.1, icu_provider 2.4.0, litemap 0.8.3, potential_utf 0.1.6, tinystr 0.8.4, tinystr 0.8.5, writeable 0.6.4, yoke 0.8.3, yoke 0.8.4, yoke-derive 0.8.4, zerofrom 0.1.8, zerofrom-derive 0.1.8, zerotrie 0.2.5, zerovec 0.11.8, zerovec 0.11.9, zerovec-derive 0.11.6, zerovec-derive 0.11.7
 
 UNICODE LICENSE V3
 
