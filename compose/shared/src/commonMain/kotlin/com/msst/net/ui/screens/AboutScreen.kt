@@ -73,11 +73,7 @@ fun AboutScreen() {
                 }
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            listOf("MSST", "十周年部计算机办", "MSST-Net 开发组").forEach {
-                Text(it, style = MaterialTheme.typography.bodySmall, color = c.textTertiary)
-            }
-        }
+        Text("MSST-Net 开发组", style = MaterialTheme.typography.bodySmall, color = c.textTertiary)
         Spacer(Modifier.height(8.dp))
         Text("内网互联焕发生机", style = MaterialTheme.typography.titleMedium, color = c.primaryDark, textAlign = TextAlign.Center)
         Text("虽是远在天边，犹如近在眼前", style = MaterialTheme.typography.bodySmall, color = c.textMuted, textAlign = TextAlign.Center)
