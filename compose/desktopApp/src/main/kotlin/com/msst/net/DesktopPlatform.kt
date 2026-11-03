@@ -7,6 +7,7 @@ import com.msst.net.platform.AccessRequestNotifier
 import com.msst.net.platform.ControllerBackend
 import com.msst.net.platform.ControllerPlatform
 import com.msst.net.platform.ControllerVariant
+import com.msst.net.platform.LocalPreferences
 import com.msst.net.platform.PlatformServices
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -18,6 +19,7 @@ import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
 import java.io.File
 import java.net.URI
+import java.util.Properties
 import javax.swing.JFileChooser
 
 /**
@@ -29,6 +31,8 @@ import javax.swing.JFileChooser
 class DesktopPlatform(private val tray: AppTray) : ControllerPlatform {
     override val variant = ControllerVariant.Desktop
     override val backend: ControllerBackend = JniBackend(socketPath = null)
+
+    override val preferences: LocalPreferences = DesktopPreferences()
 
     override val services = object : PlatformServices {
         override fun openUrl(url: String) {
@@ -65,6 +69,37 @@ class DesktopPlatform(private val tray: AppTray) : ControllerPlatform {
         notifyScope.launch {
             val shown = nativeNotifications && DesktopNotifications.show(title, body) { tray.showWindow() }
             if (!shown) tray.notify(title, body)
+        }
+    }
+}
+
+/**
+ * UI preferences in the per-user configuration directory
+ * (`%APPDATA%\MSST-Net`, `~/Library/Application Support/MSST-Net`, or
+ * `$XDG_CONFIG_HOME/msst-net`).  Failures to read or write are ignored: the
+ * preference then lasts until restart.
+ */
+private class DesktopPreferences : LocalPreferences {
+    private val file: File = run {
+        val os = System.getProperty("os.name").orEmpty()
+        val home = System.getProperty("user.home").orEmpty()
+        when {
+            os.startsWith("Windows") -> File(System.getenv("APPDATA") ?: "$home\\AppData\\Roaming", "MSST-Net")
+            os.startsWith("Mac") -> File(home, "Library/Application Support/MSST-Net")
+            else -> File(System.getenv("XDG_CONFIG_HOME")?.takeIf { it.isNotBlank() } ?: "$home/.config", "msst-net")
+        }.resolve("controller-ui.properties")
+    }
+    private val props = Properties().apply { runCatching { file.inputStream().use { load(it) } } }
+
+    @Synchronized
+    override fun get(key: String): String? = props.getProperty(key)
+
+    @Synchronized
+    override fun set(key: String, value: String) {
+        props.setProperty(key, value)
+        runCatching {
+            file.parentFile.mkdirs()
+            file.outputStream().use { props.store(it, "MSST-Net Controller UI preferences") }
         }
     }
 }

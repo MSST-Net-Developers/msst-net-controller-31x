@@ -1,15 +1,16 @@
 package com.msst.net.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -20,6 +21,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -35,9 +39,6 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -70,6 +71,9 @@ import com.msst.net.ui.theme.MonoFamily
 import com.msst.net.ui.theme.Msst
 import com.msst.net.ui.theme.MsstTheme
 import com.msst.net.ui.theme.Radius
+import com.msst.net.ui.theme.LocalThemeSetting
+import com.msst.net.ui.theme.ThemeMode
+import com.msst.net.ui.theme.ThemeSetting
 import kotlinx.coroutines.launch
 
 /** What every screen needs: the platform contract and the shared store. */
@@ -85,20 +89,45 @@ val LocalController = staticCompositionLocalOf<ControllerContext> { error("no Co
  *  larger touch targets, stacked toolbars. */
 val LocalCompact = staticCompositionLocalOf { false }
 
-private enum class Tab(val label: String, val icon: ImageVector) {
-    Home("首页", MdiIcons.HomeOutline),
-    Defense("防御", MdiIcons.ShieldOutline),
-    Settings("设置", MdiIcons.CogOutline),
-    About("关于", MdiIcons.InformationOutline),
-    Dns("域名", MdiIcons.Web),
+private enum class Tab(val label: String, val icon: ImageVector, val selectedIcon: ImageVector) {
+    Home("首页", MdiIcons.HomeOutline, MdiIcons.Home),
+    Defense("防御", MdiIcons.ShieldOutline, MdiIcons.Shield),
+    Settings("设置", MdiIcons.CogOutline, MdiIcons.Cog),
+    About("关于", MdiIcons.InformationOutline, MdiIcons.Information),
+    Dns("域名", MdiIcons.Web, MdiIcons.Web),
 }
 
-/** Root of every Controller variant; [chrome] when the window has no system title bar. */
+private const val THEME_KEY = "theme"
+
+/**
+ * Root of every Controller variant; [chrome] when the window has no system
+ * title bar.  [onDarkTheme] reports the effective theme (Android: system bar
+ * icon colours).
+ */
 @Composable
-fun ControllerApp(platform: ControllerPlatform, store: ControllerStore, chrome: WindowChrome? = null) {
+fun ControllerApp(
+    platform: ControllerPlatform,
+    store: ControllerStore,
+    chrome: WindowChrome? = null,
+    onDarkTheme: (Boolean) -> Unit = {},
+) {
     val ctx = remember(platform, store) { ControllerContext(platform, store) }
-    MsstTheme {
-        CompositionLocalProvider(LocalController provides ctx, LocalWindowChrome provides chrome) {
+    val prefs = platform.preferences
+    var mode by remember(prefs) { mutableStateOf(ThemeMode.parse(prefs?.get(THEME_KEY))) }
+    val dark = when (mode) {
+        ThemeMode.System -> isSystemInDarkTheme()
+        ThemeMode.Light -> false
+        ThemeMode.Dark -> true
+    }
+    LaunchedEffect(dark) { onDarkTheme(dark) }
+    val themeSetting = remember(mode, prefs) {
+        ThemeSetting(mode) {
+            mode = it
+            prefs?.set(THEME_KEY, it.key)
+        }
+    }
+    MsstTheme(dark) {
+        CompositionLocalProvider(LocalController provides ctx, LocalWindowChrome provides chrome, LocalThemeSetting provides themeSetting) {
             Box(Modifier.fillMaxSize().background(Msst.colors.bgSecondary).safeDrawingPadding()) {
                 val session = platform.session
                 if (session == null) MainShell(onLogout = null) else SessionGate(session)
@@ -140,114 +169,176 @@ private fun MainShell(onLogout: (() -> Unit)?) {
     val room = view?.state?.room
     val authPlace = if (ctx.platform.variant == ControllerVariant.Mobile) "首页" else "首页右下角"
 
+    val title = if (tab == Tab.Home && room?.inRoom == true) "当前房间" else tab.label
+
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val compact = maxWidth < 600.dp
         CompositionLocalProvider(LocalCompact provides compact) {
-        Column(Modifier.fillMaxSize()) {
-            if (compact) CompactTopBar(if (tab == Tab.Home && room?.inRoom == true) "当前房间" else tab.label, onLogout)
-            else TopTabs(tab, { tab = it }, onLogout)
-
-            coreBanner(view, backendError, authPlace)?.let { BannerBar(it) }
-            view?.update?.takeIf { it.available && updateKey(it) != dismissedUpdate }?.let { u ->
-                UpdateBanner(u, ctx.services::openUrl) { dismissedUpdate = updateKey(u) }
-            }
-            if (room != null && room.inRoom) RoomBanner(room.roomName, room.roomId!!, room.relay)
-
-            Box(Modifier.weight(1f).fillMaxWidth()) {
-                when (tab) {
-                    Tab.Home -> HomeScreen()
-                    Tab.Defense -> DefenseScreen()
-                    Tab.Settings -> SettingsScreen()
-                    Tab.About -> AboutScreen()
-                    Tab.Dns -> DnsScreen()
+            val body = @Composable { modifier: Modifier ->
+                Column(modifier) {
+                    Banners(
+                        coreBanner = coreBanner(view, backendError, authPlace),
+                        update = view?.update?.takeIf { it.available && updateKey(it) != dismissedUpdate },
+                        onDismissUpdate = { dismissedUpdate = updateKey(it) },
+                        room = room?.takeIf { it.inRoom },
+                    )
+                    Box(Modifier.weight(1f).fillMaxWidth()) {
+                        when (tab) {
+                            Tab.Home -> HomeScreen()
+                            Tab.Defense -> DefenseScreen()
+                            Tab.Settings -> SettingsScreen()
+                            Tab.About -> AboutScreen()
+                            Tab.Dns -> DnsScreen()
+                        }
+                    }
                 }
             }
-
-            if (compact) BottomTabs(tab) { tab = it }
-        }
-        if (ctx.features.interactiveAuth) AccessRequestDialog()
-        }
-    }
-}
-
-/** The top bar moves the window when it stands in for the system title bar. */
-@Composable
-private fun TitleBar(content: @Composable () -> Unit) {
-    val chrome = LocalWindowChrome.current
-    if (chrome == null) content() else chrome.DragArea(Modifier.fillMaxWidth(), content)
-}
-
-@Composable
-private fun TopTabs(tab: Tab, onSelect: (Tab) -> Unit, onLogout: (() -> Unit)?) = TitleBar {
-    val c = Msst.colors
-    val chrome = LocalWindowChrome.current
-    Row(
-        Modifier.fillMaxWidth().height(IntrinsicSize.Min).background(c.bgPrimary)
-            .drawBehind { drawLine(c.borderLight, Offset(0f, size.height), Offset(size.width, size.height), 1.dp.toPx()) }
-            .padding(start = 16.dp, end = if (chrome != null) 0.dp else 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Logo(22.dp)
-        Spacer(Modifier.width(8.dp))
-        Text("MSST-Net", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = c.textPrimary)
-        Spacer(Modifier.width(16.dp))
-        Tab.entries.forEach { t ->
-            val active = t == tab
-            Row(
-                Modifier.clickable { onSelect(t) }
-                    .drawBehind {
-                        if (active) drawRect(c.primary, Offset(8.dp.toPx(), size.height - 2.dp.toPx()), Size(size.width - 16.dp.toPx(), 2.dp.toPx()))
+            if (compact) {
+                // Phones: top app bar, content, bottom navigation bar.
+                Column(Modifier.fillMaxSize()) {
+                    TopAppBar(title, onLogout, showLogo = true)
+                    body(Modifier.weight(1f).fillMaxWidth())
+                    BottomTabs(tab) { tab = it }
+                }
+            } else {
+                // Desktop and browser windows: navigation rail beside the content.
+                Row(Modifier.fillMaxSize()) {
+                    SideRail(tab) { tab = it }
+                    Column(Modifier.weight(1f).fillMaxHeight()) {
+                        TopAppBar(title, onLogout, showLogo = false)
+                        body(Modifier.weight(1f).fillMaxWidth())
                     }
-                    .padding(horizontal = 10.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                MIcon(t.icon, 18.dp, if (active) c.primary else c.textTertiary)
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    t.label,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium),
-                    color = if (active) c.primary else c.textTertiary,
-                )
+                }
             }
+            if (ctx.features.interactiveAuth) AccessRequestDialog()
         }
-        Spacer(Modifier.weight(1f))
-        if (onLogout != null) LinkButton("退出", onLogout, MdiIcons.Logout, color = c.textTertiary)
-        if (chrome != null) WindowControls(chrome)
     }
 }
 
+/** Core status, update and room banners between the app bar and the page. */
 @Composable
-private fun CompactTopBar(title: String, onLogout: (() -> Unit)?) = TitleBar {
+private fun Banners(
+    coreBanner: com.msst.net.state.Banner?,
+    update: UpdateInfo?,
+    onDismissUpdate: (UpdateInfo) -> Unit,
+    room: com.msst.net.model.RoomState?,
+) {
+    val ctx = LocalController.current
+    if (coreBanner == null && update == null && room == null) return
+    val compact = LocalCompact.current
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = if (compact) 12.dp else 20.dp).padding(bottom = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        coreBanner?.let { BannerBar(it) }
+        update?.let { u -> UpdateBanner(u, ctx.services::openUrl) { onDismissUpdate(u) } }
+        if (room != null) RoomBanner(room.roomName, room.roomId!!, room.relay)
+    }
+}
+
+/**
+ * The top bar moves the window when it stands in for the system title bar.
+ * [modifier] sizes the drag area: the rail header must not use
+ * `fillMaxWidth`, or the rail takes the whole window width in its Row.
+ */
+@Composable
+private fun TitleBar(modifier: Modifier = Modifier.fillMaxWidth(), content: @Composable () -> Unit) {
+    val chrome = LocalWindowChrome.current
+    if (chrome == null) content() else chrome.DragArea(modifier, content)
+}
+
+/** Material top app bar: page title, sign-out (WebUI), window controls (desktop). */
+@Composable
+private fun TopAppBar(title: String, onLogout: (() -> Unit)?, showLogo: Boolean) = TitleBar {
     val c = Msst.colors
     val chrome = LocalWindowChrome.current
+    val compact = LocalCompact.current
     Row(
-        Modifier.fillMaxWidth().background(c.bgPrimary).height(52.dp).padding(start = 16.dp, end = if (chrome != null) 0.dp else 16.dp),
+        Modifier.fillMaxWidth().height(if (compact) 64.dp else 56.dp).background(c.bgSecondary)
+            .padding(start = if (compact) 16.dp else 20.dp, end = if (chrome != null) 0.dp else 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Logo(22.dp)
-        Spacer(Modifier.width(10.dp))
-        Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = c.textPrimary)
-        if (onLogout != null) LinkButton("退出", onLogout, MdiIcons.Logout, color = c.textTertiary)
-        if (chrome != null) WindowControls(chrome)
+        if (showLogo) {
+            Logo(28.dp)
+            Spacer(Modifier.width(12.dp))
+        }
+        Text(
+            title,
+            Modifier.weight(1f),
+            style = MaterialTheme.typography.titleLarge,
+            color = c.textPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (onLogout != null) {
+            if (compact) SmallIconButton(MdiIcons.Logout, "退出登录", onLogout, tint = c.textSecondary, size = 22.dp)
+            else LinkButton("退出登录", onLogout, MdiIcons.Logout, color = c.textSecondary)
+        }
+        if (chrome != null) {
+            Spacer(Modifier.width(4.dp))
+            Box(Modifier.align(Alignment.Top).height(40.dp)) { WindowControls(chrome) }
+        }
     }
 }
 
+/** Material navigation rail (windows at least 600 dp wide). */
+@Composable
+private fun SideRail(tab: Tab, onSelect: (Tab) -> Unit) {
+    val c = Msst.colors
+    NavigationRail(
+        Modifier.fillMaxHeight(),
+        containerColor = c.bgSecondary,
+        header = {
+            TitleBar(Modifier.width(80.dp)) {
+                Column(
+                    Modifier.width(80.dp).padding(top = 14.dp, bottom = 20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Logo(36.dp)
+                    Text("MSST-Net", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = c.textSecondary)
+                }
+            }
+        },
+    ) {
+        Tab.entries.forEach { t ->
+            val selected = t == tab
+            NavigationRailItem(
+                selected = selected,
+                onClick = { onSelect(t) },
+                icon = { MIcon(if (selected) t.selectedIcon else t.icon, 24.dp) },
+                label = { Text(t.label, style = MaterialTheme.typography.labelMedium.copy(fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)) },
+                modifier = Modifier.padding(vertical = 2.dp),
+                colors = NavigationRailItemDefaults.colors(
+                    selectedIconColor = c.primaryDark,
+                    selectedTextColor = c.textPrimary,
+                    indicatorColor = c.navIndicator,
+                    unselectedIconColor = c.textSecondary,
+                    unselectedTextColor = c.textSecondary,
+                ),
+            )
+        }
+    }
+}
+
+/** Material navigation bar (phones). */
 @Composable
 private fun BottomTabs(tab: Tab, onSelect: (Tab) -> Unit) {
     val c = Msst.colors
     NavigationBar(containerColor = c.bgPrimary, tonalElevation = 0.dp) {
         Tab.entries.forEach { t ->
+            val selected = t == tab
             NavigationBarItem(
-                selected = t == tab,
+                selected = selected,
                 onClick = { onSelect(t) },
-                icon = { MIcon(t.icon, 22.dp) },
-                label = { Text(t.label, style = MaterialTheme.typography.labelSmall) },
+                icon = { MIcon(if (selected) t.selectedIcon else t.icon, 24.dp) },
+                label = { Text(t.label, style = MaterialTheme.typography.labelMedium.copy(fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)) },
                 colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = c.primary,
-                    selectedTextColor = c.primary,
-                    indicatorColor = c.primaryLighter,
-                    unselectedIconColor = c.textTertiary,
-                    unselectedTextColor = c.textTertiary,
+                    selectedIconColor = c.primaryDark,
+                    selectedTextColor = c.textPrimary,
+                    indicatorColor = c.navIndicator,
+                    unselectedIconColor = c.textSecondary,
+                    unselectedTextColor = c.textSecondary,
                 ),
             )
         }
@@ -266,7 +357,7 @@ private fun UpdateBanner(u: UpdateInfo, openUrl: (String) -> Unit, onDismiss: ()
         LinkButton(updateDownloadLabel(u, "Gitee"), { openUrl(u.downloadGitee) })
         LinkButton("GitHub", { openUrl(u.downloadGithub) }, MdiIcons.Github)
     }
-    val bar = Modifier.fillMaxWidth().background(c.primaryLighter).padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp)
+    val bar = Modifier.fillMaxWidth().clip(Radius.md).background(c.primaryLighter).padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp)
     if (LocalCompact.current) {
         Column(bar) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -289,13 +380,14 @@ private fun RoomBanner(name: String?, roomId: String, relay: String?) {
     val c = Msst.colors
     val services = LocalController.current.services
     Row(
-        Modifier.fillMaxWidth().background(c.primaryLighter).padding(horizontal = 16.dp, vertical = 4.dp),
+        Modifier.fillMaxWidth().clip(Radius.md).background(c.primaryLighter).padding(horizontal = 16.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        MIcon(MdiIcons.AccountMultipleOutline, 18.dp, c.primaryDark)
         Text(name ?: "当前房间", style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold), color = c.primaryDark)
         Row(
-            Modifier.clip(Radius.full).background(c.bgPrimary).border(1.dp, c.primarySoftBorder, Radius.full).padding(start = 10.dp),
+            Modifier.clip(Radius.sm).background(c.bgPrimary).border(1.dp, c.primarySoftBorder, Radius.sm).padding(start = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(roomId, style = MaterialTheme.typography.labelSmall.copy(fontFamily = MonoFamily), color = c.primaryDark)

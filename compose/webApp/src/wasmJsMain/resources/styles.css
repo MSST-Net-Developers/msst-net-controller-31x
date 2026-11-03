@@ -4,7 +4,20 @@ html, body {
     margin: 0;
     padding: 0;
     overflow: hidden;
-    background: #f4f8fc;
+    background: #f5f9fc;
+    color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+    html, body {
+        background: #111418;
+    }
+    #loading .track {
+        stroke: #0d3c78;
+    }
+    #loading .arc {
+        stroke: #90caf9;
+    }
 }
 
 #loading {

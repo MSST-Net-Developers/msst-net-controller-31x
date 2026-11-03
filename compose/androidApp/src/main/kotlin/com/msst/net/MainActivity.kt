@@ -1,10 +1,12 @@
 package com.msst.net
 
 import android.Manifest
+import android.graphics.Color
 import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -29,7 +31,7 @@ class MainActivity : ComponentActivity() {
         app.platform.vpn.requestPermission = ::startVpn
 
         setContent {
-            ControllerApp(app.platform, app.store)
+            ControllerApp(app.platform, app.store, onDarkTheme = ::applySystemBars)
         }
 
         if (savedInstanceState == null) {
@@ -45,6 +47,13 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         if (app.platform.vpn.requestPermission == ::startVpn) app.platform.vpn.requestPermission = null
         super.onDestroy()
+    }
+
+    /** Status / navigation bar icons follow the app's theme, which may differ from the system's. */
+    private fun applySystemBars(dark: Boolean) {
+        val style = if (dark) SystemBarStyle.dark(Color.TRANSPARENT)
+        else SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+        enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
     }
 
     private fun startVpn() {

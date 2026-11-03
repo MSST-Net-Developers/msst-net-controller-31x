@@ -1,7 +1,7 @@
 package com.msst.net.ui.components
 
-// Small building blocks of the light-blue minimal design, shared by every
-// screen (the Compose counterpart of the Svelte frontend's app.css).
+// Small building blocks of the Material Design UI, shared by every screen.
+// Colours come from [Msst.colors] so both light and dark mode apply.
 
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -123,7 +123,7 @@ fun logoPainter(): Painter = painterResource(Res.drawable.msst_logo)
 
 // ── Surfaces ─────────────────────────────────────────────────────────────────
 
-/** White card with a light border (`.settings-card`, `.mode-group`). */
+/** Material outlined card: surface colour, subtle outline, 12 dp corners. */
 @Composable
 fun Card(
     modifier: Modifier = Modifier,
@@ -134,9 +134,9 @@ fun Card(
 ) {
     Column(
         modifier
-            .clip(Radius.lg)
+            .clip(Radius.md)
             .background(background)
-            .border(1.dp, border, Radius.lg)
+            .border(1.dp, border, Radius.md)
             .padding(padding ?: if (LocalCompact.current) PaddingValues(14.dp) else PaddingValues(horizontal = 20.dp, vertical = 16.dp)),
         verticalArrangement = Arrangement.spacedBy(8.dp),
         content = content,
@@ -145,7 +145,7 @@ fun Card(
 
 @Composable
 fun SectionHeader(title: String, hint: String? = null) {
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(title, style = MaterialTheme.typography.titleMedium, color = Msst.colors.textPrimary)
         if (hint != null) Text(hint, style = MaterialTheme.typography.bodySmall, color = Msst.colors.textMuted)
     }
@@ -154,31 +154,37 @@ fun SectionHeader(title: String, hint: String? = null) {
 @Composable
 fun Divider() = HorizontalDivider(color = Msst.colors.borderLight)
 
-/** Light-blue notice row with an icon (`.mode-group-notice`). */
+/** Tonal notice row with an icon. */
 @Composable
 fun Notice(text: String, icon: ImageVector = MdiIcons.InformationOutline) {
     Row(
-        Modifier.fillMaxWidth().clip(Radius.sm).background(Msst.colors.primaryLighter).padding(horizontal = 10.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        Modifier.fillMaxWidth().clip(Radius.sm).background(Msst.colors.primaryLighter).padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        MIcon(icon, 14.dp, Msst.colors.primaryDark)
+        MIcon(icon, 16.dp, Msst.colors.primaryDark)
         Text(text, style = MaterialTheme.typography.labelSmall, color = Msst.colors.primaryDark)
     }
 }
 
-/** Core connection / sync banner under the navigation bar. */
+/** Core connection / sync banner under the top app bar (Material banner). */
 @Composable
 fun BannerBar(banner: Banner) {
     val c = Msst.colors
-    val (bg, fg) = when (banner.kind) {
-        BannerKind.Info -> c.primaryLighter to c.primaryDark
-        BannerKind.Warn -> c.warningLight to c.warning
-        BannerKind.Error -> c.errorLight to c.error
+    val (bg, fg, icon) = when (banner.kind) {
+        BannerKind.Info -> Triple(c.primaryLighter, c.primaryDark, MdiIcons.InformationOutline)
+        BannerKind.Warn -> Triple(c.warningLight, c.warning, MdiIcons.AlertOutline)
+        BannerKind.Error -> Triple(c.errorLight, c.error, MdiIcons.AlertCircleOutline)
     }
-    Column(Modifier.fillMaxWidth().background(bg).padding(horizontal = 16.dp, vertical = 7.dp)) {
-        Text(banner.text, style = MaterialTheme.typography.bodySmall, color = fg)
-        banner.detail?.let {
-            Text(it, style = MaterialTheme.typography.labelSmall, color = c.textMuted, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    Row(
+        Modifier.fillMaxWidth().clip(Radius.md).background(bg).padding(horizontal = 16.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        MIcon(icon, 18.dp, fg)
+        Column(Modifier.weight(1f)) {
+            Text(banner.text, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium), color = fg)
+            banner.detail?.let {
+                Text(it, style = MaterialTheme.typography.labelSmall, color = c.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
         }
     }
 }
@@ -260,9 +266,8 @@ fun Pill(text: String, fg: Color, bg: Color) {
 @Composable
 fun Tag(text: String, onRemove: (() -> Unit)? = null) {
     Row(
-        Modifier.clip(Radius.full).background(Msst.colors.primaryLighter)
-            .border(1.dp, Msst.colors.primarySoftBorder, Radius.full)
-            .padding(start = 10.dp, end = if (onRemove != null) 4.dp else 10.dp, top = 3.dp, bottom = 3.dp),
+        Modifier.clip(Radius.sm).background(Msst.colors.primaryLighter)
+            .padding(start = 10.dp, end = if (onRemove != null) 4.dp else 10.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(text, style = MaterialTheme.typography.labelSmall, color = Msst.colors.primaryDark)
@@ -289,7 +294,8 @@ fun SpinningIcon(icon: ImageVector, spinning: Boolean, size: Dp = 17.dp, tint: C
 
 // ── Buttons ──────────────────────────────────────────────────────────────────
 
-private val ButtonPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+// Material 3 common buttons: fully rounded, 40 dp high.
+private val ButtonPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp)
 
 @Composable
 fun PrimaryButton(
@@ -304,18 +310,19 @@ fun PrimaryButton(
     val c = Msst.colors
     Button(
         onClick = onClick,
-        modifier = modifier.heightIn(min = 36.dp),
+        modifier = modifier.heightIn(min = 40.dp),
         enabled = enabled && !busy,
-        shape = Radius.md,
+        shape = Radius.full,
         contentPadding = ButtonPadding,
         colors = ButtonDefaults.buttonColors(
             containerColor = if (danger) c.error else c.primary,
             contentColor = c.textInverse,
-            disabledContainerColor = (if (danger) c.error else c.primary).copy(alpha = 0.45f),
-            disabledContentColor = c.textInverse,
+            // A busy button keeps its colour; a disabled one is Material's neutral.
+            disabledContainerColor = if (busy) (if (danger) c.error else c.primary).copy(alpha = 0.7f) else c.textPrimary.copy(alpha = 0.12f),
+            disabledContentColor = if (busy) c.textInverse else c.textPrimary.copy(alpha = 0.38f),
         ),
     ) {
-        if (busy) Spinner(14.dp, c.textInverse) else if (icon != null) MIcon(icon, 16.dp)
+        if (busy) Spinner(14.dp, c.textInverse) else if (icon != null) MIcon(icon, 18.dp)
         if (busy || icon != null) Spacer(Modifier.width(6.dp))
         Text(text, style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold))
     }
@@ -335,19 +342,27 @@ fun SecondaryButton(
     val fg = if (danger) c.error else if (active) c.primaryDark else c.primary
     OutlinedButton(
         onClick = onClick,
-        modifier = modifier.heightIn(min = 36.dp),
+        modifier = modifier.heightIn(min = 40.dp),
         enabled = enabled,
-        shape = Radius.md,
+        shape = Radius.full,
         contentPadding = ButtonPadding,
-        border = BorderStroke(1.dp, if (danger) c.error.copy(alpha = 0.5f) else if (active) c.primary else c.borderPrimary),
+        border = BorderStroke(
+            1.dp,
+            when {
+                !enabled -> c.textPrimary.copy(alpha = 0.12f)
+                danger -> c.error.copy(alpha = 0.6f)
+                active -> c.primary
+                else -> c.borderMedium
+            },
+        ),
         colors = ButtonDefaults.outlinedButtonColors(
-            containerColor = if (active) c.primaryLighter else c.bgPrimary,
+            containerColor = if (active) c.primaryLighter else Color.Transparent,
             contentColor = fg,
-            disabledContentColor = fg.copy(alpha = 0.45f),
+            disabledContentColor = c.textPrimary.copy(alpha = 0.38f),
         ),
     ) {
         if (icon != null) {
-            MIcon(icon, 16.dp)
+            MIcon(icon, 18.dp)
             Spacer(Modifier.width(6.dp))
         }
         Text(text, style = MaterialTheme.typography.labelLarge)
@@ -356,12 +371,13 @@ fun SecondaryButton(
 
 @Composable
 fun LinkButton(text: String, onClick: () -> Unit, icon: ImageVector? = null, enabled: Boolean = true, color: Color = Msst.colors.primary) {
-    TextButton(onClick, enabled = enabled, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp), shape = Radius.sm) {
+    val fg = if (enabled) color else Msst.colors.textPrimary.copy(alpha = 0.38f)
+    TextButton(onClick, enabled = enabled, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp), shape = Radius.full) {
         if (icon != null) {
-            MIcon(icon, 15.dp, color)
-            Spacer(Modifier.width(4.dp))
+            MIcon(icon, 16.dp, fg)
+            Spacer(Modifier.width(6.dp))
         }
-        Text(text, style = MaterialTheme.typography.labelMedium, color = if (enabled) color else color.copy(alpha = 0.45f))
+        Text(text, style = MaterialTheme.typography.labelLarge, color = fg)
     }
 }
 
@@ -376,7 +392,7 @@ fun SmallIconButton(
 ) {
     // Phones: at least 40 dp to be comfortably tappable.
     IconButton(onClick, Modifier.size(if (LocalCompact.current) 40.dp else 32.dp), enabled = enabled) {
-        MIcon(icon, size, if (enabled) tint else tint.copy(alpha = 0.4f), contentDescription)
+        MIcon(icon, size, if (enabled) tint else Msst.colors.textPrimary.copy(alpha = 0.38f), contentDescription)
     }
 }
 
@@ -438,15 +454,16 @@ fun TextInput(
             imeAction = if (onDone != null) ImeAction.Done else ImeAction.Default,
         ),
         keyboardActions = KeyboardActions(onDone = onDone?.let { { it() } }),
-        shape = Radius.md,
+        shape = Radius.xs,
         colors = OutlinedTextFieldDefaults.colors(
             focusedBorderColor = c.primary,
             unfocusedBorderColor = c.borderMedium,
             focusedLabelColor = c.primary,
+            unfocusedLabelColor = c.textSecondary,
             cursorColor = c.primary,
-            focusedContainerColor = c.bgPrimary,
-            unfocusedContainerColor = c.bgPrimary,
-            disabledContainerColor = c.bgSecondary,
+            focusedContainerColor = Color.Transparent,
+            unfocusedContainerColor = Color.Transparent,
+            disabledContainerColor = Color.Transparent,
         ),
     )
 }
@@ -459,8 +476,9 @@ fun Toggle(checked: Boolean, onChange: (Boolean) -> Unit, enabled: Boolean = tru
         colors = SwitchDefaults.colors(
             checkedTrackColor = c.primary,
             checkedThumbColor = c.textInverse,
-            uncheckedTrackColor = c.borderMedium,
-            uncheckedThumbColor = c.textInverse,
+            checkedBorderColor = c.primary,
+            uncheckedTrackColor = c.bgTertiary,
+            uncheckedThumbColor = c.textTertiary,
             uncheckedBorderColor = c.borderMedium,
         ),
     )
@@ -530,23 +548,23 @@ fun <T> Select(
     val c = Msst.colors
     Box(modifier) {
         Row(
-            Modifier.fillMaxWidth().clip(Radius.md).background(if (enabled) c.bgPrimary else c.bgSecondary)
-                .border(1.dp, c.borderMedium, Radius.md)
+            Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(Radius.xs)
+                .border(1.dp, if (enabled) c.borderMedium else c.borderLight, Radius.xs)
                 .clickable(enabled = enabled) { open = true }
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 selected?.let(label) ?: placeholder,
                 Modifier.weight(1f),
                 style = MaterialTheme.typography.bodyMedium,
-                color = if (selected == null) c.textMuted else c.textPrimary,
+                color = if (!enabled) c.textMuted else if (selected == null) c.textMuted else c.textPrimary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             MIcon(MdiIcons.ChevronDown, 18.dp, c.textTertiary)
         }
-        DropdownMenu(open, { open = false }, containerColor = c.bgPrimary) {
+        DropdownMenu(open, { open = false }, containerColor = c.bgElevated) {
             options.forEach { o ->
                 DropdownMenuItem(text = { Text(label(o), style = MaterialTheme.typography.bodyMedium) }, onClick = {
                     open = false
@@ -563,7 +581,7 @@ fun Collapsible(title: String, open: Boolean, onToggle: () -> Unit, content: @Co
     val c = Msst.colors
     Column(Modifier.fillMaxWidth().clip(Radius.md).border(1.dp, c.borderLight, Radius.md)) {
         Row(
-            Modifier.fillMaxWidth().clickable(onClick = onToggle).background(c.bgSecondary).padding(horizontal = 14.dp, vertical = 10.dp),
+            Modifier.fillMaxWidth().clickable(onClick = onToggle).background(c.bgTertiary.copy(alpha = 0.6f)).padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(title, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold), color = c.textPrimary)
@@ -595,18 +613,18 @@ fun Modal(
     ) {
         val compact = LocalCompact.current
         Surface(
-            Modifier.padding(if (compact) 12.dp else 16.dp).widthIn(max = if (wide) 640.dp else 440.dp).fillMaxWidth(),
+            Modifier.padding(if (compact) 12.dp else 16.dp).widthIn(max = if (wide) 640.dp else 460.dp).fillMaxWidth(),
             shape = Radius.xl,
-            color = Msst.colors.bgPrimary,
-            shadowElevation = 12.dp,
+            color = Msst.colors.bgElevated,
+            shadowElevation = 6.dp,
         ) {
-            Column(Modifier.padding(if (compact) 18.dp else 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.padding(if (compact) 20.dp else 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 if (icon != null) Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { icon() }
                 if (title != null) {
                     Text(
                         title,
                         Modifier.fillMaxWidth(),
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.headlineSmall,
                         color = Msst.colors.textPrimary,
                         textAlign = if (icon != null) TextAlign.Center else TextAlign.Start,
                     )
@@ -664,8 +682,8 @@ fun Dot(color: Color, size: Dp = 8.dp) = Box(Modifier.size(size).clip(Radius.ful
 @Composable
 fun InfoBlock(content: @Composable ColumnScope.() -> Unit) {
     Column(
-        Modifier.fillMaxWidth().clip(Radius.md).background(Msst.colors.bgSecondary)
-            .border(1.dp, Msst.colors.borderLight, Radius.md).padding(horizontal = 12.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth().clip(Radius.sm).background(Msst.colors.bgTertiary.copy(alpha = 0.6f))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(3.dp),
         content = content,
     )

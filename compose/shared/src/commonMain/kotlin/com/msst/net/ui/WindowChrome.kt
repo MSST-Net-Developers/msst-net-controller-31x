@@ -35,13 +35,14 @@ interface WindowChrome {
 
 val LocalWindowChrome = staticCompositionLocalOf<WindowChrome?> { null }
 
-/** Minimize and close, flush with the top-right corner; fills the bar's height. */
+/** Minimize and close, flush with the top-right corner; fills the given height.
+ *  Close turns the usual window-manager red (Material Red 600) on hover. */
 @Composable
 fun WindowControls(chrome: WindowChrome) {
     val c = Msst.colors
     Row(Modifier.fillMaxHeight()) {
         WindowButton(MdiIcons.WindowMinimize, "最小化", c.bgHover, c.textPrimary, chrome::minimize)
-        WindowButton(MdiIcons.Close, "关闭", c.errorDot, c.textInverse, chrome::close)
+        WindowButton(MdiIcons.Close, "关闭", Color(0xFFE53935), Color.White, chrome::close)
     }
 }
 

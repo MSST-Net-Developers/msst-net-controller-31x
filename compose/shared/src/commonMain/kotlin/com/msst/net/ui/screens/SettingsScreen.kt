@@ -12,7 +12,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.ui.graphics.Color
+import com.msst.net.ui.theme.LocalThemeSetting
+import com.msst.net.ui.theme.ThemeMode
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -100,6 +107,7 @@ fun SettingsScreen() {
     ) {
         Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(if (LocalCompact.current) 12.dp else 16.dp)) {
             IdentityCard()
+            AppearanceCard()
             ctx.platform.appExclusion?.let { AppExclusionCard(it) }
             ctx.platform.session?.let { RemoteAccessCard(it) }
             DiagnosticsCard()
@@ -108,6 +116,34 @@ fun SettingsScreen() {
 }
 
 // ── Identity ─────────────────────────────────────────────────────────────────
+
+/** Light / dark / follow the system.  Kept on this device only. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AppearanceCard() {
+    val setting = LocalThemeSetting.current
+    val c = Msst.colors
+    Card(Modifier.fillMaxWidth()) {
+        SectionHeader("外观", if (LocalController.current.platform.session != null) "浅色或深色主题，只保存在当前浏览器中" else "浅色或深色主题，只保存在本设备上")
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            ThemeMode.entries.forEachIndexed { i, mode ->
+                SegmentedButton(
+                    selected = setting.mode == mode,
+                    onClick = { setting.set(mode) },
+                    shape = SegmentedButtonDefaults.itemShape(i, ThemeMode.entries.size),
+                    colors = SegmentedButtonDefaults.colors(
+                        activeContainerColor = c.primaryLighter,
+                        activeContentColor = c.primaryDark,
+                        activeBorderColor = c.borderMedium,
+                        inactiveContainerColor = Color.Transparent,
+                        inactiveContentColor = c.textPrimary,
+                        inactiveBorderColor = c.borderMedium,
+                    ),
+                ) { Text(mode.label, style = MaterialTheme.typography.labelLarge) }
+            }
+        }
+    }
+}
 
 @Composable
 private fun IdentityCard() {

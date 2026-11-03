@@ -144,7 +144,7 @@ fun DefenseScreen() {
 
     Column(Modifier.fillMaxSize()) {
         FlowRow(
-            Modifier.fillMaxWidth().background(Msst.colors.bgPrimary).padding(horizontal = if (LocalCompact.current) 12.dp else 16.dp, vertical = 8.dp),
+            Modifier.fillMaxWidth().background(Msst.colors.bgSecondary).padding(horizontal = if (LocalCompact.current) 12.dp else 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
             itemVerticalAlignment = Alignment.CenterVertically,

@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -116,8 +117,10 @@ fun HomeScreen() {
 @Composable
 private fun NetworkWarningsBar(warnings: List<NetworkWarning>) {
     val c = Msst.colors
+    val compact = LocalCompact.current
     Column(
-        Modifier.fillMaxWidth().background(c.warningLight).padding(horizontal = if (LocalCompact.current) 16.dp else 24.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().padding(horizontal = if (compact) 12.dp else 20.dp).padding(bottom = 4.dp)
+            .clip(Radius.md).background(c.warningLight).padding(horizontal = 16.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         warnings.forEach { w ->
@@ -160,7 +163,7 @@ private fun RoomView(view: ControllerView) {
             }
         }
         Column(
-            Modifier.fillMaxWidth().background(Msst.colors.bgPrimary).padding(horizontal = 20.dp, vertical = 12.dp),
+            Modifier.fillMaxWidth().background(Msst.colors.bgSecondary).padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -193,8 +196,11 @@ private fun RoomRelayBar(relay: RoomRelay) {
         "down" -> c.warningDot to c.warningLight
         else -> c.borderMedium to c.bgPrimary
     }
+    val compact = LocalCompact.current
     Row(
-        Modifier.fillMaxWidth().background(bg).padding(horizontal = if (LocalCompact.current) 16.dp else 24.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().padding(horizontal = if (compact) 12.dp else 20.dp).padding(bottom = 4.dp)
+            .clip(Radius.md).background(bg).border(1.dp, if (relay.state == "down") bg else c.borderLight, Radius.md)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -273,8 +279,8 @@ private fun PeerCardContent(peer: RoomPeer, self: Boolean, path: String?, servic
     val c = Msst.colors
     Card(padding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(36.dp).clip(Radius.full).background(c.primaryLighter), contentAlignment = Alignment.Center) {
-                MIcon(MdiIcons.Monitor, 18.dp, c.primary)
+            Box(Modifier.size(40.dp).clip(Radius.full).background(c.primaryLighter), contentAlignment = Alignment.Center) {
+                MIcon(MdiIcons.Monitor, 20.dp, c.primaryDark)
             }
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -384,12 +390,12 @@ private fun ModePage(view: ControllerView?) {
         }
         if (!compact) FloatingActionButton(
             onClick = { requireCoordinator("auth", "查看认证状态或发起接入认证") },
-            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = 64.dp).size(48.dp),
-            containerColor = if (ready) Msst.colors.primary else Msst.colors.borderPrimary,
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = 72.dp).size(56.dp),
+            containerColor = if (ready) Msst.colors.primaryLighter else Msst.colors.bgTertiary,
             elevation = if (ready) FloatingActionButtonDefaults.elevation() else FloatingActionButtonDefaults.elevation(0.dp, 0.dp, 0.dp, 0.dp),
-            contentColor = Msst.colors.textInverse,
-            shape = Radius.full,
-        ) { MIcon(MdiIcons.AccountKeyOutline, 22.dp, contentDescription = "接入认证") }
+            contentColor = if (ready) Msst.colors.primaryDark else Msst.colors.textMuted,
+            shape = Radius.lg,
+        ) { MIcon(MdiIcons.AccountKeyOutline, 24.dp, contentDescription = "接入认证") }
     }
 
     when (dialog) {
@@ -401,9 +407,9 @@ private fun ModePage(view: ControllerView?) {
 
 @Composable
 private fun ModeHeader(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        MIcon(icon, 18.dp, Msst.colors.primary)
-        Text(title, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold), color = Msst.colors.textPrimary)
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        MIcon(icon, 20.dp, Msst.colors.brand)
+        Text(title, style = MaterialTheme.typography.titleSmall, color = Msst.colors.textPrimary)
     }
 }
 
@@ -418,7 +424,7 @@ private fun Pending(text: String) = Text(text, style = MaterialTheme.typography.
 private fun IdRow(key: String?, value: String) {
     val c = Msst.colors
     Row(
-        Modifier.fillMaxWidth().clip(Radius.md).background(c.bgSecondary).border(1.dp, c.borderLight, Radius.md)
+        Modifier.fillMaxWidth().clip(Radius.sm).background(c.bgTertiary.copy(alpha = 0.6f))
             .padding(start = 14.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -438,18 +444,18 @@ private fun BigAction(
     onClick: () -> Unit,
 ) {
     val c = Msst.colors
-    val bg = if (primary) c.primary else c.bgPrimary
-    val fg = if (primary) c.textInverse else c.primary
+    // Filled (primary) or tonal container; neutral while unavailable.
+    val bg = if (!available) c.textPrimary.copy(alpha = 0.08f) else if (primary) c.primary else c.primaryLighter
+    val fg = if (!available) c.textPrimary.copy(alpha = 0.6f) else if (primary) c.textInverse else c.primaryDark
     Column(
-        modifier.clip(Radius.lg).background(bg.copy(alpha = if (available) 1f else 0.45f))
-            .border(1.dp, (if (primary) c.primary else c.borderPrimary).copy(alpha = if (available) 1f else 0.45f), Radius.lg)
+        modifier.clip(Radius.lg).background(bg)
             .clickable(onClick = onClick)
-            .padding(16.dp),
+            .padding(vertical = 20.dp, horizontal = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        MIcon(icon, 22.dp, fg.copy(alpha = if (available) 1f else 0.6f))
-        Text(text, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold), color = fg.copy(alpha = if (available) 1f else 0.6f))
+        MIcon(icon, 24.dp, fg)
+        Text(text, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold), color = fg)
     }
 }
 
@@ -466,7 +472,9 @@ private fun StatusBar(view: ControllerView?, backendError: String?) {
         CoreStatus.Checking -> c.borderMedium to c.textMuted
     }
     Row(
-        Modifier.fillMaxWidth().background(c.bgPrimary).padding(start = if (LocalCompact.current) 16.dp else 24.dp, end = 8.dp, top = 2.dp, bottom = 2.dp),
+        Modifier.fillMaxWidth().background(c.bgPrimary)
+            .drawBehind { drawLine(c.borderLight, Offset(0f, 0f), Offset(size.width, 0f), 1.dp.toPx()) }
+            .padding(start = if (LocalCompact.current) 16.dp else 24.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {

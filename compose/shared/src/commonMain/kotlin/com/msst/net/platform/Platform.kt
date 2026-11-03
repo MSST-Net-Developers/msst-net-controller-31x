@@ -173,6 +173,15 @@ interface WebSession {
 
 data class RemoteAccessConfig(val port: Int, val allowedCidrs: List<String>)
 
+/**
+ * Small per-device UI preferences (appearance).  Presentation state only:
+ * never networking state, never secrets, never sent to Core.
+ */
+interface LocalPreferences {
+    fun get(key: String): String?
+    fun set(key: String, value: String)
+}
+
 /** Everything a Controller variant provides to the shared UI. */
 interface ControllerPlatform {
     val variant: ControllerVariant
@@ -186,4 +195,6 @@ interface ControllerPlatform {
     val appExclusion: AppExclusion? get() = null
     /** Present when access needs a password (WebUI). */
     val session: WebSession? get() = null
+    /** Where UI preferences are kept; without it they last until restart. */
+    val preferences: LocalPreferences? get() = null
 }

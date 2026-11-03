@@ -13,6 +13,7 @@ import com.msst.net.platform.ApiException
 import com.msst.net.platform.ControllerBackend
 import com.msst.net.platform.ControllerPlatform
 import com.msst.net.platform.ControllerVariant
+import com.msst.net.platform.LocalPreferences
 import com.msst.net.platform.PlatformServices
 import com.msst.net.platform.RemoteAccessConfig
 import com.msst.net.platform.WebSession
@@ -56,6 +57,18 @@ class WebPlatform : ControllerPlatform {
             downloadText(suggestedName, content)
             return true
         }
+    }
+
+    /** This browser's localStorage (it may be unavailable, e.g. blocked site data). */
+    override val preferences = object : LocalPreferences {
+        override fun get(key: String): String? = runCatching { window.localStorage.getItem(PREFIX + key) }.getOrNull()
+        override fun set(key: String, value: String) {
+            runCatching { window.localStorage.setItem(PREFIX + key, value) }
+        }
+    }
+
+    private companion object {
+        const val PREFIX = "msst-net."
     }
 }
 

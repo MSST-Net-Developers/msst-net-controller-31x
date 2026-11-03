@@ -14,6 +14,7 @@ import com.msst.net.platform.AccessRequestNotifier
 import com.msst.net.platform.ControllerBackend
 import com.msst.net.platform.ControllerPlatform
 import com.msst.net.platform.ControllerVariant
+import com.msst.net.platform.LocalPreferences
 import com.msst.net.platform.PlatformServices
 import com.msst.net.platform.MsstVpnService
 import com.msst.net.platform.VpnControl
@@ -28,6 +29,12 @@ class AndroidPlatform(private val context: Context) : ControllerPlatform {
     override val backend: ControllerBackend = JniBackend(MsstVpnService.socketPath(context))
     override val vpn = AndroidVpnControl(context)
     override val appExclusion = AndroidAppExclusion(context)
+
+    override val preferences = object : LocalPreferences {
+        private val prefs = context.getSharedPreferences("ui", Context.MODE_PRIVATE)
+        override fun get(key: String): String? = prefs.getString(key, null)
+        override fun set(key: String, value: String) = prefs.edit().putString(key, value).apply()
+    }
 
     override val services = object : PlatformServices {
         override fun openUrl(url: String) {

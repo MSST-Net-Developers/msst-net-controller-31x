@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Compose 接管主题，这里只需要一个基础 Theme 供 manifest 引用 -->
+    <!-- Compose 接管主题，这里只需要一个基础 Theme 供 manifest 引用；
+         窗口背景与 Compose 的页面背景一致，避免启动时闪白（深色见 values-night） -->
     <style name="Theme.MsstNet" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:windowBackground">@android:color/white</item>
+        <item name="android:windowBackground">@color/msst_window_background</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
+    <color name="msst_window_background">#F5F9FC</color>
 </resources>
